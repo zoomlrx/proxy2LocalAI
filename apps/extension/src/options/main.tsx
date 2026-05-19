@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { AppConfig, HttpMethod, ProxyProfile } from "@proxy2localai/shared";
+import type { AppConfig, HttpMethod, ProxyProfile } from "@web2LocalAgent/shared";
 import { applyDynamicRules } from "../lib/dnr";
 import { getBridgeHealth, syncProfilesToBridge } from "../lib/bridgeApi";
 import { requestProfilePermission } from "../lib/permissions";
@@ -187,7 +187,7 @@ function OptionsApp() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <h1>Proxy2LocalAI</h1>
+          <h1>web2LocalAgent</h1>
           <p>{status}</p>
         </div>
         <div className="actions">
@@ -423,7 +423,7 @@ function OptionsApp() {
               <input
                 autoFocus
                 value={pathDraft}
-                placeholder="C:/project/demoProject/proxy2LocalAI"
+                placeholder="C:/project/demoProject/web2LocalAgent"
                 onChange={(event) => setPathDraft(event.target.value)}
               />
             </label>

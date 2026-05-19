@@ -1,4 +1,4 @@
-import type { AppConfig } from "@proxy2localai/shared";
+import type { AppConfig } from "@web2LocalAgent/shared";
 import { buildDynamicRules } from "./rules";
 
 export interface DnrApi {

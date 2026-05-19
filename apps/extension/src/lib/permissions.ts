@@ -1,4 +1,4 @@
-import type { ProxyProfile } from "@proxy2localai/shared";
+import type { ProxyProfile } from "@web2LocalAgent/shared";
 
 export async function requestProfilePermission(profile: ProxyProfile): Promise<boolean> {
   const origin = `${profile.targetOrigin}/*`;

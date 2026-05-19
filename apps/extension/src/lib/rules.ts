@@ -1,4 +1,4 @@
-import type { AppConfig, ProxyProfile } from "@proxy2localai/shared";
+import type { AppConfig, ProxyProfile } from "@web2LocalAgent/shared";
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

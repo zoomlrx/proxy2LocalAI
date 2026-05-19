@@ -1,6 +1,6 @@
-# Proxy2LocalAI
+# web2LocalAgent
 
-Proxy2LocalAI 是一个 Chrome/Edge MV3 浏览器扩展与本地 Node bridge 的组合，用来把指定线上 API 请求代理到本机 AI CLI，例如 Claude Code 或 Codex。
+web2LocalAgent 是一个 Chrome/Edge MV3 浏览器扩展与本地 Node bridge 的组合，用来把指定线上 API 请求代理到本机 AI CLI，例如 Claude Code 或 Codex。
 
 ## 架构
 
@@ -21,12 +21,12 @@ Proxy2LocalAI 是一个 Chrome/Edge MV3 浏览器扩展与本地 Node bridge 的
   "page": {
     "url": "https://app.example.com/workspace/123?tab=chat",
     "origin": "https://app.example.com",
-    "source": "x-proxy2localai-page-url"
+    "source": "x-web2LocalAgent-page-url"
   }
 }
 ```
 
-页面地址提取优先级为 `x-proxy2localai-page-url`、`referer`、`origin`。当前版本不主动修改页面请求头，避免触发额外 CORS 预检；后续接入 CDP 或内容脚本时，可以显式写入 `x-proxy2localai-page-url` 来获得完整页面 URL。
+页面地址提取优先级为 `x-web2LocalAgent-page-url`、`referer`、`origin`。当前版本不主动修改页面请求头，避免触发额外 CORS 预检；后续接入 CDP 或内容脚本时，可以显式写入 `x-web2LocalAgent-page-url` 来获得完整页面 URL。
 
 ## 快速开始
 
@@ -39,7 +39,7 @@ npm run start:bridge
 然后在 Chrome 或 Edge 中打开扩展管理页，启用开发者模式，加载目录：
 
 ```text
-C:\project\demoProject\proxy2LocalAI\apps\extension\dist
+C:\project\demoProject\web2LocalAgent\apps\extension\dist
 ```
 
 默认 bridge 地址是：
@@ -51,14 +51,14 @@ http://127.0.0.1:39399
 默认本地 token 是：
 
 ```text
-proxy2localai-local-token
+web2LocalAgent-local-token
 ```
 
 生产或长期使用时建议设置环境变量：
 
 ```powershell
-$env:PROXY2LOCALAI_TOKEN="your-local-token"
-$env:PROXY2LOCALAI_PORT="39399"
+$env:web2LocalAgent_TOKEN="your-local-token"
+$env:web2LocalAgent_PORT="39399"
 npm run start:bridge
 ```
 
@@ -163,7 +163,7 @@ data: {"stage":"provider_start",...}
 也可以通过环境变量指定保存位置：
 
 ```powershell
-$env:PROXY2LOCALAI_PROFILES_PATH="C:/path/to/profiles.json"
+$env:web2LocalAgent_PROFILES_PATH="C:/path/to/profiles.json"
 npm run start:bridge
 ```
 

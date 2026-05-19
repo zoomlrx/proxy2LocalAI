@@ -2,9 +2,9 @@ import {
   createEmptyConfig,
   normalizeConfig,
   type AppConfig
-} from "@proxy2localai/shared";
+} from "@web2LocalAgent/shared";
 
-export const STORAGE_KEY = "proxy2localai.config";
+export const STORAGE_KEY = "web2LocalAgent.config";
 
 export interface StorageArea {
   get(key: string): Promise<Record<string, unknown>>;

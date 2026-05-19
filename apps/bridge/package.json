@@ -1,9 +1,9 @@
 {
-  "name": "@proxy2localai/bridge",
+  "name": "@web2LocalAgent/bridge",
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "proxy2localai-bridge": "./dist/index.js"
+    "web2LocalAgent-bridge": "./dist/index.js"
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm --platform node --target node20 --dts --sourcemap --clean",
@@ -11,6 +11,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@proxy2localai/shared": "0.1.0"
+    "@web2LocalAgent/shared": "0.1.0"
   }
 }

@@ -6,7 +6,7 @@ import {
   type HttpMethod,
   type ProxyProfile,
   type ResponseMode
-} from "@proxy2localai/shared";
+} from "@web2LocalAgent/shared";
 
 export interface ProfileDraft {
   id: string;

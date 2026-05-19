@@ -1,5 +1,5 @@
 {
-  "name": "proxy2localai",
+  "name": "web2LocalAgent",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,13 +9,13 @@
     "apps/extension"
   ],
   "scripts": {
-    "build": "npm run build -w @proxy2localai/shared && npm run build -w @proxy2localai/bridge && npm run build -w @proxy2localai/extension",
-    "dev:bridge": "npm run dev -w @proxy2localai/bridge",
-    "dev:extension": "npm run dev -w @proxy2localai/extension",
+    "build": "npm run build -w @web2LocalAgent/shared && npm run build -w @web2LocalAgent/bridge && npm run build -w @web2LocalAgent/extension",
+    "dev:bridge": "npm run dev -w @web2LocalAgent/bridge",
+    "dev:extension": "npm run dev -w @web2LocalAgent/extension",
     "start:bridge": "node apps/bridge/dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "npm run typecheck -w @proxy2localai/shared && npm run typecheck -w @proxy2localai/bridge && npm run typecheck -w @proxy2localai/extension"
+    "typecheck": "npm run typecheck -w @web2LocalAgent/shared && npm run typecheck -w @web2LocalAgent/bridge && npm run typecheck -w @web2LocalAgent/extension"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.1.1",

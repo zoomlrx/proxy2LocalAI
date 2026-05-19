@@ -1,4 +1,4 @@
-import type { AppConfig } from "@proxy2localai/shared";
+import type { AppConfig } from "@web2LocalAgent/shared";
 
 export interface BridgeHealth {
   ok: boolean;
@@ -21,7 +21,7 @@ export async function syncProfilesToBridge(config: AppConfig): Promise<void> {
     method: "PUT",
     headers: {
       "content-type": "application/json",
-      "x-proxy2localai-token": config.token
+      "x-web2LocalAgent-token": config.token
     },
     body: JSON.stringify({
       profiles: config.profiles

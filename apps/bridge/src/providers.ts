@@ -2,7 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { createInterface } from "node:readline";
-import type { AiProvider, ProxyProfile } from "@proxy2localai/shared";
+import type { AiProvider, ProxyProfile } from "@web2LocalAgent/shared";
 
 export interface AiProviderAdapter {
   generateText(profile: ProxyProfile, prompt: string, context?: ProviderRunContext): Promise<string>;

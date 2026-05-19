@@ -1,5 +1,5 @@
 export const DEFAULT_BRIDGE_BASE_URL = "http://127.0.0.1:39399";
-export const DEFAULT_LOCAL_TOKEN = "proxy2localai-local-token";
+export const DEFAULT_LOCAL_TOKEN = "web2LocalAgent-local-token";
 export const DEFAULT_TIMEOUT_MS = 0;
 export const DEFAULT_MAX_BODY_BYTES = 0;
 

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { AppConfig } from "@proxy2localai/shared";
+import type { AppConfig } from "@web2LocalAgent/shared";
 import { getBridgeHealth } from "../lib/bridgeApi";
 import { getChromeConfigStorage } from "../lib/storage";
 import { syncBridgeThenApplyRules } from "../lib/sync";
@@ -37,7 +37,7 @@ function PopupApp() {
   return (
     <main className="popup">
       <header>
-        <h1>Proxy2LocalAI</h1>
+        <h1>web2LocalAgent</h1>
         <p>{status}</p>
       </header>
       <dl>
