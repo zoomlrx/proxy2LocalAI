@@ -152,13 +152,31 @@ p {
 
 .profile-item {
   display: grid;
-  gap: 4px;
-  justify-items: start;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
   border-color: #d6dde3;
   background: #fff;
   color: #172026;
   text-align: left;
   padding: 10px;
+}
+
+.profile-item-name {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: left;
+  padding: 0;
+  min-height: unset;
+  cursor: pointer;
+}
+
+.profile-item-name:hover {
+  background: none;
 }
 
 .profile-item:hover,
@@ -324,6 +342,22 @@ legend {
 .modal h2 {
   margin: 0;
   font-size: 18px;
+}
+
+.custom-json-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #dbe2e7;
+  border-radius: 8px;
+  background: #f9fbfc;
+  padding: 12px;
+}
+
+.profile-item-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
 }
 
 @media (max-width: 760px) {

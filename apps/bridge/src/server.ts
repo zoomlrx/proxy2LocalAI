@@ -8,7 +8,10 @@ import {
   createStreamChunk,
   createStreamDone,
   DEFAULT_LOCAL_TOKEN,
+  extractAiData,
   normalizeProfiles,
+  renderCustomJsonTemplate,
+  validateCustomJsonTemplate,
   type ProxyProfile
 } from "@proxy2localai/shared";
 import {
@@ -143,6 +146,13 @@ async function handleRequest(
   const profileId = matchProxyProfileId(url.pathname);
   if (profileId) {
     assertAuthorized(req, url, context.token);
+    logRequestEvent(context.requestsLogPath, {
+      stage: "request_received",
+      profileId,
+      method: req.method ?? "GET",
+      pathname: url.pathname,
+      queryKeys: Array.from(url.searchParams.keys()).filter((key) => key !== "token")
+    });
     const profile = context.profiles.get(profileId);
     if (!profile || !profile.enabled) {
       throw new HttpError(404, "not_found", "代理配置不存在或未启用", {
@@ -155,11 +165,25 @@ async function handleRequest(
       throw new HttpError(405, "method_not_allowed", `代理配置不允许 ${method} 请求`);
     }
 
+    logRequestEvent(context.requestsLogPath, {
+      stage: "profile_matched",
+      profileId: profile.id,
+      provider: profile.provider,
+      responseMode: profile.responseMode,
+      enabled: profile.enabled
+    });
+    trackClientAbort(req, context.requestsLogPath, profile);
+
     const parameters = await buildRequestParameters(req, url, profile);
     const prompt = composePrompt(parameters, profile.prompt);
     const provider = context.providers[profile.provider] as AiProviderAdapter | undefined;
     if (!provider) {
       throw new HttpError(500, "provider_error", `未找到 provider: ${profile.provider}`);
+    }
+
+    if (profile.responseMode === "custom_json") {
+      await customJsonResponse(res, profile, provider, prompt, context.requestsLogPath);
+      return;
     }
 
     if (profile.responseMode === "stream") {
@@ -450,6 +474,13 @@ async function streamResponse(
     "cache-control": "no-cache, no-transform",
     connection: "keep-alive"
   });
+  logRequestEvent(requestsLogPath, {
+    stage: "response_headers_sent",
+    profileId: profile.id,
+    provider: profile.provider,
+    responseMode: profile.responseMode,
+    contentType: "text/event-stream; charset=utf-8"
+  });
 
   try {
     const startEvent = {
@@ -481,6 +512,14 @@ async function streamResponse(
         content,
         model: `local-${profile.provider}`
       }));
+      logRequestEvent(requestsLogPath, {
+        stage: "response_chunk_written",
+        profileId: profile.id,
+        provider: profile.provider,
+        responseMode: profile.responseMode,
+        chunkIndex: chunkCount,
+        chunkChars: content.length
+      });
     }
     logRequestEvent(requestsLogPath, {
       stage: "provider_done",
@@ -490,6 +529,13 @@ async function streamResponse(
       chunkCount
     });
     res.write(createStreamDone());
+    logRequestEvent(requestsLogPath, {
+      stage: "response_done_written",
+      profileId: profile.id,
+      provider: profile.provider,
+      responseMode: profile.responseMode,
+      chunkCount
+    });
     res.end();
   } catch (error) {
     logRequestEvent(requestsLogPath, {
@@ -506,4 +552,54 @@ async function streamResponse(
     res.write(createStreamDone());
     res.end();
   }
+}
+
+function trackClientAbort(req: IncomingMessage, logPath: string, profile: ProxyProfile): void {
+  req.on("aborted", () => {
+    logRequestEvent(logPath, {
+      stage: "client_aborted",
+      profileId: profile.id,
+      provider: profile.provider,
+      responseMode: profile.responseMode
+    });
+  });
+}
+
+async function customJsonResponse(
+  res: ServerResponse,
+  profile: ProxyProfile,
+  provider: AiProviderAdapter,
+  prompt: string,
+  requestsLogPath: string
+): Promise<void> {
+  validateCustomJsonTemplate(profile.customJsonTemplate);
+  logRequestEvent(requestsLogPath, {
+    stage: "provider_start",
+    profileId: profile.id,
+    provider: profile.provider,
+    responseMode: profile.responseMode
+  });
+  const raw = await provider.generateRawText(profile, prompt);
+  const aiData = extractAiData(raw, {
+    sseDataEvents: profile.sseDataEvents
+  });
+  const body = renderCustomJsonTemplate({
+    aiData,
+    template: profile.customJsonTemplate
+  });
+  logRequestEvent(requestsLogPath, {
+    stage: "provider_done",
+    profileId: profile.id,
+    provider: profile.provider,
+    responseMode: profile.responseMode,
+    outputChars: aiData.length
+  });
+  sendRawJson(res, 200, body);
+}
+
+function sendRawJson(res: ServerResponse, status: number, body: string): void {
+  res.writeHead(status, {
+    "content-type": "application/json; charset=utf-8"
+  });
+  res.end(body);
 }

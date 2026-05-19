@@ -7,3 +7,6 @@ coverage/
 Thumbs.db
 apps/extension/.crx/
 apps/bridge/data/
+.claude/
+doc
+docs/plans

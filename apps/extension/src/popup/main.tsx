@@ -61,8 +61,19 @@ function PopupApp() {
       <ul>
         {config?.profiles.slice(0, 4).map((profile) => (
           <li key={profile.id}>
-            <span>{profile.name}</span>
-            <small>{profile.enabled ? "启用" : "停用"} · {profile.responseMode}</small>
+            <div className="profile-item-row">
+              <div>
+                <span>{profile.name}</span>
+                <small>{profile.enabled ? "启用" : "停用"} · {profile.responseMode}</small>
+              </div>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => chrome.runtime.openOptionsPage()}
+              >
+                启停
+              </button>
+            </div>
           </li>
         ))}
       </ul>

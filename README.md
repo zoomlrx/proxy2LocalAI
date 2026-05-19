@@ -121,6 +121,8 @@ npm run dev:extension
 
 ## 排障
 
+如果请求已经被重定向但代理后的请求没有返回，参考 [代理无响应定位清单](docs/proxy-diagnostics.md)。
+
 如果请求已经被重定向到 `http://127.0.0.1:39399/proxy/...`，但调用失败，先检查 bridge 当前是否有配置：
 
 ```powershell

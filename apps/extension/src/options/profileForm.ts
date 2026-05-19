@@ -23,6 +23,8 @@ export interface ProfileDraft {
   maxBodyBytes: number;
   customCommand: string;
   customArgs: string;
+  customJsonTemplate: string;
+  sseDataEvents: string;
 }
 
 export function createBlankProfile(projectDir = ""): ProfileDraft {
@@ -40,7 +42,9 @@ export function createBlankProfile(projectDir = ""): ProfileDraft {
     timeoutMs: DEFAULT_TIMEOUT_MS,
     maxBodyBytes: DEFAULT_MAX_BODY_BYTES,
     customCommand: "",
-    customArgs: ""
+    customArgs: "",
+    customJsonTemplate: "",
+    sseDataEvents: "message"
   };
 }
 
@@ -49,7 +53,9 @@ export function profileToDraft(profile: ProxyProfile): ProfileDraft {
     ...profile,
     prompt: profile.prompt ?? "",
     customCommand: profile.customCommand ?? "",
-    customArgs: profile.customArgs?.join("\n") ?? ""
+    customArgs: profile.customArgs?.join("\n") ?? "",
+    customJsonTemplate: profile.customJsonTemplate ?? "",
+    sseDataEvents: profile.sseDataEvents?.join("\n") ?? "message"
   };
 }
 
@@ -60,6 +66,11 @@ export function draftToProfile(draft: ProfileDraft): ProxyProfile {
     customCommand: draft.customCommand || undefined,
     customArgs: draft.customArgs
       .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean),
+    customJsonTemplate: draft.customJsonTemplate || undefined,
+    sseDataEvents: draft.sseDataEvents
+      .split(/[\r\n,]+/)
       .map((line) => line.trim())
       .filter(Boolean)
   });

@@ -9,7 +9,7 @@ export type HttpMethod = typeof HTTP_METHODS[number];
 export const AI_PROVIDERS = ["claude", "codex", "custom"] as const;
 export type AiProvider = typeof AI_PROVIDERS[number];
 
-export const RESPONSE_MODES = ["block", "stream"] as const;
+export const RESPONSE_MODES = ["block", "stream", "custom_json"] as const;
 export type ResponseMode = typeof RESPONSE_MODES[number];
 
 export interface ProxyProfile {
@@ -27,6 +27,8 @@ export interface ProxyProfile {
   maxBodyBytes: number;
   customCommand?: string;
   customArgs?: string[];
+  customJsonTemplate?: string;
+  sseDataEvents: string[];
 }
 
 export interface AppConfig {
@@ -119,7 +121,7 @@ function normalizeResponseMode(value: unknown): ResponseMode {
     return "block";
   }
   if (typeof value !== "string" || !RESPONSE_MODES.includes(value as ResponseMode)) {
-    throw new Error("responseMode 必须是 block 或 stream");
+    throw new Error("responseMode 必须是 block、stream 或 custom_json");
   }
   return value as ResponseMode;
 }
@@ -156,6 +158,20 @@ function normalizeStringArray(value: unknown, fieldName: string): string[] | und
   return value.map((item) => asString(item, fieldName));
 }
 
+function normalizeEventNames(value: unknown): string[] {
+  let raw: string[];
+  if (value === undefined || value === null || value === "") {
+    raw = ["message"];
+  } else if (Array.isArray(value)) {
+    raw = value.map((item) => String(item ?? "").trim()).filter(Boolean);
+  } else {
+    raw = String(value).split(/[\r\n,]+/).map((s) => s.trim()).filter(Boolean);
+  }
+
+  const events = Array.from(new Set(raw));
+  return events.length > 0 ? events : ["message"];
+}
+
 export function normalizeProfile(value: unknown): ProxyProfile {
   const input = asRecord(value, "profile");
   const id = asString(input.id, "id");
@@ -177,7 +193,9 @@ export function normalizeProfile(value: unknown): ProxyProfile {
     timeoutMs: normalizeNonNegativeInteger(input.timeoutMs, "timeoutMs", DEFAULT_TIMEOUT_MS),
     maxBodyBytes: normalizeNonNegativeInteger(input.maxBodyBytes, "maxBodyBytes", DEFAULT_MAX_BODY_BYTES),
     customCommand: asOptionalString(input.customCommand, "customCommand"),
-    customArgs: normalizeStringArray(input.customArgs, "customArgs")
+    customArgs: normalizeStringArray(input.customArgs, "customArgs"),
+    customJsonTemplate: asOptionalString(input.customJsonTemplate, "customJsonTemplate"),
+    sseDataEvents: normalizeEventNames(input.sseDataEvents)
   };
 }
 

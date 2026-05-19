@@ -6,6 +6,7 @@ import type { AiProvider, ProxyProfile } from "@proxy2localai/shared";
 
 export interface AiProviderAdapter {
   generateText(profile: ProxyProfile, prompt: string, context?: ProviderRunContext): Promise<string>;
+  generateRawText(profile: ProxyProfile, prompt: string, context?: ProviderRunContext): Promise<string>;
   streamText(profile: ProxyProfile, prompt: string, context?: ProviderRunContext): AsyncIterable<string>;
 }
 
@@ -33,6 +34,12 @@ interface TimeoutHandle {
 interface ProcessExit {
   code: number | null;
   signal: NodeJS.Signals | null;
+}
+
+function cleanSpawnEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  delete env.CLAUDECODE;
+  return env;
 }
 
 let providerLogger: ProviderLogger = () => undefined;
@@ -205,6 +212,7 @@ export function createProviderCommand(profile: ProxyProfile, streaming: boolean)
         "--output-format",
         streaming ? "stream-json" : "json",
         ...(streaming ? ["--verbose", "--include-partial-messages"] : []),
+        "--dangerously-skip-permissions",
         "--tools",
         ""
       ]
@@ -217,6 +225,7 @@ export function createProviderCommand(profile: ProxyProfile, streaming: boolean)
       args: [
         "exec",
         "--skip-git-repo-check",
+        "--full-auto",
         "--json",
         "-C",
         profile.projectDir,
@@ -293,6 +302,10 @@ export function createCliProvider(): AiProviderAdapter {
       const spec = createProviderCommand(profile, false);
       return runCommandToText(spec, profile, prompt, context);
     },
+    async generateRawText(profile, prompt, context) {
+      const spec = createProviderCommand(profile, true);
+      return runCommandToRawText(spec, profile, prompt, context);
+    },
     streamText(profile, prompt, context) {
       const spec = createProviderCommand(profile, true);
       return runCommandToStream(spec, profile, prompt, context);
@@ -319,7 +332,8 @@ async function runCommandToText(
   const child = spawn(spec.command, spec.args, {
     cwd: profile.projectDir,
     stdio: ["pipe", "pipe", "pipe"],
-    windowsHide: true
+    windowsHide: true,
+    env: cleanSpawnEnv()
   }) as ChildProcessWithoutNullStreams;
   const timeout = killAfterTimeout(child, profile, spec, context);
   writePrompt(child, prompt);
@@ -389,7 +403,8 @@ async function* runCommandToStream(
   const child = spawn(spec.command, spec.args, {
     cwd: profile.projectDir,
     stdio: ["pipe", "pipe", "pipe"],
-    windowsHide: true
+    windowsHide: true,
+    env: cleanSpawnEnv()
   }) as ChildProcessWithoutNullStreams;
   const timeout = killAfterTimeout(child, profile, spec, context);
   const stderrChunks: Buffer[] = [];
@@ -450,4 +465,69 @@ async function* runCommandToStream(
   if (exit.code !== 0) {
     throw new Error(stderr || `${spec.command} 退出码 ${exit.code ?? "unknown"}`);
   }
+}
+
+async function runCommandToRawText(
+  spec: CommandSpec,
+  profile: ProxyProfile,
+  prompt: string,
+  context?: ProviderRunContext
+): Promise<string> {
+  logSpawn(profile, spec, prompt, true, context);
+  const child = spawn(spec.command, spec.args, {
+    cwd: profile.projectDir,
+    stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: true,
+    env: cleanSpawnEnv()
+  }) as ChildProcessWithoutNullStreams;
+  const timeout = killAfterTimeout(child, profile, spec, context);
+  writePrompt(child, prompt);
+
+  const stdoutChunks: Buffer[] = [];
+  const stderrChunks: Buffer[] = [];
+  child.stdout.on("data", (chunk: Buffer) => {
+    stdoutChunks.push(chunk);
+    emitProviderEvent(context, {
+      stage: "provider_stdout",
+      provider: profile.provider,
+      bytes: chunk.length
+    });
+  });
+  child.stderr.on("data", (chunk: Buffer) => {
+    stderrChunks.push(chunk);
+    emitProviderEvent(context, {
+      stage: "provider_stderr",
+      provider: profile.provider,
+      bytes: chunk.length,
+      text: chunk.toString("utf8").slice(0, 1000)
+    });
+  });
+
+  const exit = await new Promise<ProcessExit>((resolve, reject) => {
+    child.on("error", reject);
+    child.on("close", (code, signal) => resolve({ code, signal }));
+  }).finally(() => {
+    if (timeout.timer) {
+      clearTimeout(timeout.timer);
+    }
+  });
+
+  const stdout = Buffer.concat(stdoutChunks).toString("utf8");
+  const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();
+  emitProviderEvent(context, {
+    stage: "provider_exit",
+    provider: profile.provider,
+    code: exit.code,
+    signal: exit.signal,
+    timedOut: timeout.timedOut(),
+    stdoutChars: stdout.length,
+    stderrChars: stderr.length
+  });
+  if (timeout.timedOut()) {
+    throw new Error(`${spec.command} 超时 ${profile.timeoutMs}ms 后终止`);
+  }
+  if (exit.code !== 0) {
+    throw new Error(stderr || `${spec.command} 退出码 ${exit.code ?? "unknown"}`);
+  }
+  return stdout;
 }
