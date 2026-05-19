@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Proxy2LocalAI",
+  "version": "0.1.0",
+  "description": "Proxy selected browser API requests to local Claude Code or Codex CLI.",
+  "permissions": [
+    "storage",
+    "declarativeNetRequest"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "action": {
+    "default_title": "Proxy2LocalAI",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  }
+}

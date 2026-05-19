@@ -1,0 +1,16 @@
+{
+  "name": "@proxy2localai/bridge",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "proxy2localai-bridge": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --platform node --target node20 --dts --sourcemap --clean",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@proxy2localai/shared": "0.1.0"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "@proxy2localai/shared",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --platform neutral --target es2022 --dts --sourcemap --clean",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

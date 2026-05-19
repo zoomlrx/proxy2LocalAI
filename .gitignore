@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+.vite/
+*.log
+.DS_Store
+Thumbs.db
+apps/extension/.crx/
+apps/bridge/data/
