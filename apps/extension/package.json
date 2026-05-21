@@ -1,7 +1,9 @@
 {
   "name": "@proxy2localai/extension",
   "version": "0.1.0",
+  "description": "Chrome/Edge MV3 extension for Proxy2LocalAI.",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "build": "vite build",

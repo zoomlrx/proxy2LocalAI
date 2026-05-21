@@ -1,8 +1,30 @@
 {
   "name": "proxy2localai",
   "version": "0.1.0",
+  "description": "Chrome/Edge MV3 extension and local bridge for proxying selected API requests to local Claude Code, Codex, or custom AI CLIs.",
   "private": false,
+  "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zoomlrx/web2LocalAgent.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zoomlrx/web2LocalAgent/issues"
+  },
+  "homepage": "https://github.com/zoomlrx/web2LocalAgent#readme",
+  "keywords": [
+    "browser-extension",
+    "chrome-extension",
+    "edge-extension",
+    "local-ai",
+    "claude-code",
+    "codex",
+    "proxy"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "workspaces": [
     "packages/shared",
     "apps/bridge",

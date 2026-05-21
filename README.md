@@ -1,12 +1,48 @@
 # Proxy2LocalAI
 
-Proxy2LocalAI 是一个 Chrome/Edge MV3 浏览器扩展与本地 Bridge 服务的组合，用来把指定线上 API 请求代理到本机 AI CLI，例如 Claude Code 或 Codex。
+Proxy2LocalAI 是一个 Chrome/Edge MV3 浏览器扩展与本地 Bridge 服务的组合，用来把你明确配置的线上 API 请求代理到本机 AI CLI，例如 Claude Code、Codex 或自定义命令。
+
+它适合调试“原本调用远程大模型 API 的网页或应用”，把指定接口临时接到本机 AI 工具上；它不是全局代理，也不会做 HTTPS MITM。
+
+![Proxy2LocalAI demo 聊天页](docs/assets/demo-chat.png)
+
+## 功能亮点
+
+- 只代理启用 profile 中声明的目标域名、路径和 HTTP 方法。
+- 支持 OpenAI 兼容普通 JSON、流式 SSE 和自定义 JSON 模板。
+- 支持 Claude Code、Codex 和 Custom Provider。
+- 支持配置导入、备份和分享模板。
+- Bridge 自检可以定位 Node、配置目录、日志目录和 Provider 命令。
+- 默认只监听 `127.0.0.1`，管理接口和代理入口都需要本地 token。
+
+## 适用场景
+
+- 本地调试依赖 OpenAI 兼容接口的网页、插件或前端 demo。
+- 把某个测试环境 API 临时接到 Claude Code、Codex 或自定义 CLI。
+- 对比真实接口和本机 AI CLI 的响应格式。
+- 制作可分享的接口代理模板，让其他人导入后填写自己的本机路径。
+
+## 不适用场景
+
+- 浏览器全局代理。
+- 抓包或解密 HTTPS 流量。
+- 代理未明确配置的所有请求。
+- 在不可信项目目录中开启无人值守本机命令执行。
 
 ## 架构
 
-- `apps/extension`：浏览器扩展，负责代理配置、动态重定向规则、Popup 和 Options 页面。
-- `apps/bridge`：只监听 `127.0.0.1` 的本地 HTTP 服务，负责鉴权、CORS、请求上下文组装、调用本地 AI CLI，并返回 OpenAI 兼容 JSON、SSE 或自定义 JSON。
-- `packages/shared`：共享配置模型、配置导入导出、提示词拼装和 OpenAI 兼容响应工具。
+```mermaid
+flowchart LR
+  Page["网页 XHR/fetch"] --> Extension["MV3 扩展 DNR 规则"]
+  Extension --> Bridge["127.0.0.1 Bridge"]
+  Bridge --> Provider["Claude / Codex / Custom CLI"]
+  Provider --> Bridge
+  Bridge --> Page
+```
+
+- `apps/extension`：浏览器扩展，负责配置界面、可选域名权限、动态重定向规则、Popup 和 Options 页面。
+- `apps/bridge`：本地 HTTP 服务，负责鉴权、CORS、请求上下文组装、调用本机 AI CLI，并返回兼容响应。
+- `packages/shared`：共享配置模型、配置导入导出、提示词拼装和响应模板工具。
 
 请求上下文会被拼成：
 
@@ -24,7 +60,7 @@ npm run build
 npm run start:bridge
 ```
 
-也可以使用跨端启动脚本：
+也可以使用跨平台启动脚本：
 
 ```powershell
 .\scripts\start-bridge.ps1
@@ -37,18 +73,8 @@ sh scripts/start-bridge.sh
 然后在 Chrome 或 Edge 中打开扩展管理页，启用开发者模式，加载目录：
 
 ```text
-C:\project\demoProject\proxy2LocalAI\apps\extension\dist
+apps/extension/dist
 ```
-
-## Demo 聊天测试页
-
-项目内置一个单 HTML 暗黑聊天测试页：
-
-```text
-C:\project\demoProject\proxy2LocalAI\demo\index.html
-```
-
-使用前请先在扩展配置页创建并同步一套匹配 `https://api.example.com` + `/v1/chat/completions` + `POST` 的启用 profile。打开 demo 页面后，在聊天输入框输入内容并点击 `发送`，页面会向默认示例接口发起请求；如果插件规则命中，请求会被代理到本地 Bridge，返回内容会显示为聊天窗口中的代理回复。
 
 默认 Bridge 地址：
 
@@ -62,9 +88,32 @@ http://127.0.0.1:39399
 proxy2localai-local-token
 ```
 
-## 普通用户安装思路
+默认 token 方便本机快速体验。长期使用建议设置随机 token：
 
-发布包会包含两个文件：
+```powershell
+$env:PROXY2LOCALAI_TOKEN="your-random-local-token"
+npm run start:bridge
+```
+
+## Demo 聊天测试页
+
+项目内置一个单 HTML 聊天测试页：
+
+```text
+demo/index.html
+```
+
+使用前请先在扩展配置页创建并同步一套启用 profile：
+
+- 目标地址：`https://api.example.com`
+- 目标接口：`/v1/chat/completions`
+- HTTP 方法：`POST`
+
+打开 demo 页面后输入消息并点击 `发送`。如果扩展规则命中，请求会被代理到本地 Bridge，返回内容会显示在聊天窗口中。
+
+## 普通用户安装
+
+Release 会包含两个文件：
 
 - `extension.zip`：解压后在 Chrome/Edge 扩展管理页加载。
 - `bridge.zip`：解压后按系统运行 `start.cmd`、`start.ps1` 或 `start.sh`。
@@ -114,31 +163,24 @@ Invoke-RestMethod `
 自检会检查：
 
 - Bridge 是否响应。
+- 是否仍在使用默认 token。
 - 当前加载了多少套代理配置。
 - 配置和日志目录是否可写。
 - 已启用 profile 需要的 `claude`、`codex` 或自定义命令是否能在 PATH 中找到。
 
 自检不会真正调用 Claude/Codex，也不会消耗模型额度。
 
-## 配置说明
-
-每套代理配置包含：
-
-- `粘贴 cURL 配置`：可粘贴常见 cURL 命令，自动填充目标地址、目标接口和 HTTP 方法。
-- `目标地址`：例如 `https://api.openai.com`
-- `目标接口`：例如 `/v1/chat/completions`
-- `HTTP 方法`：默认 `POST`
-- `AI Provider`：`Claude Code`、`Codex` 或 `Custom`
-- `本地 AI 配置项目路径`：Claude/Codex 的工作目录，用来读取项目级配置。
-- `返回类型`：普通 JSON、流式 SSE 或自定义 JSON。
-- `提示词`：可选，追加在 `<parames>...</parames>` 后。
-- `超时` 与 `请求体上限`：`0` 表示不限制。
-
 ## Provider 行为
 
-- Claude Code：默认执行 `claude -p --output-format json`，流式模式使用 `stream-json`、`--verbose` 与 `--include-partial-messages`。
-- Codex：默认执行 `codex exec --skip-git-repo-check --full-auto --json -C <projectDir> -`。
+- Claude Code：默认执行 `claude -p --output-format json --tools ""`；流式模式使用 `stream-json`、`--verbose` 和 `--include-partial-messages`。
+- Codex：默认执行 `codex exec --skip-git-repo-check --json -C <projectDir> -`。
 - Custom：执行用户配置的命令和参数，把提示词写入 stdin，stdout 作为 AI 输出。
+
+默认不会启用 Claude `--dangerously-skip-permissions` 或 Codex `--full-auto`。如果你明确需要无人值守自动化，并且理解本机项目目录风险，可以设置：
+
+```powershell
+$env:PROXY2LOCALAI_ALLOW_DANGEROUS_CLI="true"
+```
 
 ## 数据目录和环境变量
 
@@ -178,6 +220,23 @@ npm run dev:extension
 npm run doctor
 ```
 
+## 安全与隐私
+
+请先阅读：
+
+- [安全模型](docs/security-model.md)
+- [安全策略](SECURITY.md)
+- [隐私说明](PRIVACY.md)
+
+关键边界：
+
+- Bridge 只监听 `127.0.0.1`。
+- 扩展只为启用的指定 API 生成动态规则。
+- 代理入口通过本地 token 鉴权。
+- 扩展产物不依赖远程托管代码。
+- 分享模板默认停用 profile，并移除 token。
+- Custom Provider 会执行本机命令，只应配置可信命令。
+
 ## 排障
 
 如果请求已经被重定向但代理后的请求没有返回，参考 [代理无响应定位清单](docs/proxy-diagnostics.md)。
@@ -191,13 +250,21 @@ npm run doctor
 
 如果 `profileCount` 是 `0`，说明浏览器里可能有 DNR 规则，但 Bridge 尚未同步 profile。打开扩展配置页点击 `同步` 即可。
 
-## 安全边界
+## 贡献
 
-- Bridge 只监听 `127.0.0.1`。
-- 扩展只为启用的指定 API 生成动态规则。
-- 代理入口通过本地 token 鉴权。
-- 扩展产物不依赖远程托管代码。
-- 分享模板默认停用 profile，并移除 token。
+欢迎 issue 和 PR。开始前请阅读：
+
+- [贡献指南](CONTRIBUTING.md)
+- [社区行为准则](CODE_OF_CONDUCT.md)
+- [变更日志](CHANGELOG.md)
+
+提交 PR 前建议运行：
+
+```powershell
+npm test
+npm run typecheck
+npm run build
+```
 
 ## 已知限制
 

@@ -1,0 +1,53 @@
+name: Bug 报告
+description: 报告可复现的问题
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。涉及 token、日志、请求体或本地路径时，请先脱敏。
+  - type: textarea
+    id: summary
+    attributes:
+      label: 问题概述
+      description: 简要说明发生了什么。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 请写出最小复现步骤。
+      placeholder: |
+        1. 启动 Bridge
+        2. 加载扩展
+        3. 配置 profile
+        4. 发送请求
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息
+      placeholder: |
+        - OS:
+        - Node.js:
+        - 浏览器:
+        - Proxy2LocalAI 版本或 commit:
+        - Provider: Claude / Codex / Custom
+    validations:
+      required: true

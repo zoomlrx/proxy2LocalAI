@@ -88,6 +88,16 @@ export function createDoctorReport(options: CreateDoctorReportOptions): DoctorRe
     )
   ];
 
+  const usesDefaultToken = options.tokenSource === "default local token";
+  checks.push(createCheck(
+    "token",
+    "本地 Token",
+    usesDefaultToken ? "warning" : "ok",
+    usesDefaultToken
+      ? "当前使用内置默认 token，建议设置 PROXY2LOCALAI_TOKEN"
+      : `当前 token 来源：${options.tokenSource}`
+  ));
+
   checks.push(options.profiles.length > 0
     ? createCheck(
         "profiles",

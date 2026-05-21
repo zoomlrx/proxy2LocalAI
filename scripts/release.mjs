@@ -16,7 +16,7 @@ console.log("\n打包扩展...");
 const extensionDist = resolve(root, "apps/extension/dist");
 const extensionZip = resolve(root, "extension.zip");
 rmSync(extensionZip, { force: true });
-execSync(`powershell -Command "Compress-Archive -Path '${extensionDist}\\*' -DestinationPath '${extensionZip}' -Force"`, { cwd: root });
+zipDirectory(extensionDist, extensionZip);
 console.log("   -> extension.zip");
 
 console.log("打包 Bridge...");
@@ -52,15 +52,16 @@ writeFileSync(resolve(bridgeTmp, "README.txt"), [
   "  macOS/Linux 可运行 sh doctor.sh",
   "",
   "环境变量：",
-  "  PROXY2LOCALAI_TOKEN          访问令牌，默认 proxy2localai-local-token",
+  "  PROXY2LOCALAI_TOKEN          访问令牌；建议设置为随机字符串",
   "  PROXY2LOCALAI_PORT           监听端口，默认 39399",
   "  PROXY2LOCALAI_DATA_DIR       配置和日志目录",
   "  PROXY2LOCALAI_PROFILES_PATH  profiles.json 路径",
   "  PROXY2LOCALAI_REQUESTS_LOG_PATH requests.log 路径",
+  "  PROXY2LOCALAI_ALLOW_DANGEROUS_CLI=true  显式允许危险 CLI 自动化参数",
   ""
 ].join("\r\n"), "utf8");
 
-execSync(`powershell -Command "Compress-Archive -Path '${bridgeTmp}\\*' -DestinationPath '${bridgeZip}' -Force"`, { cwd: root });
+zipDirectory(bridgeTmp, bridgeZip);
 rmSync(bridgeTmp, { recursive: true, force: true });
 console.log("   -> bridge.zip");
 
@@ -91,7 +92,7 @@ rmSync(bridgeZip, { force: true });
 console.log(`\nRelease ${tag} 发布完成。\n`);
 
 function generateReleaseNotes(currentTag) {
-  const prevTag = getPreviousTag();
+  const prevTag = getPreviousTag(currentTag);
   const range = prevTag ? `${prevTag}..HEAD` : "HEAD";
   let log;
   try {
@@ -124,13 +125,33 @@ function generateReleaseNotes(currentTag) {
   ].join("\n");
 }
 
-function getPreviousTag() {
+function getPreviousTag(currentTag) {
   try {
-    return execSync("git describe --tags --abbrev=0 2>/dev/null", {
+    return execSync(`git describe --tags --abbrev=0 ${currentTag}^`, {
       cwd: root,
-      encoding: "utf8"
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
     }).trim();
   } catch {
     return null;
+  }
+}
+
+function zipDirectory(sourceDir, zipFile) {
+  if (process.platform === "win32") {
+    execSync(`powershell -NoProfile -Command "Compress-Archive -Path '${sourceDir}\\*' -DestinationPath '${zipFile}' -Force"`, {
+      cwd: root,
+      stdio: "inherit"
+    });
+    return;
+  }
+
+  try {
+    execSync(`zip -qr '${zipFile}' .`, {
+      cwd: sourceDir,
+      stdio: "inherit"
+    });
+  } catch {
+    throw new Error("打包失败：macOS/Linux 需要系统可用的 zip 命令");
   }
 }

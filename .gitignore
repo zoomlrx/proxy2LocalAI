@@ -3,6 +3,13 @@ dist/
 coverage/
 .vite/
 *.log
+.env
+.env.*
+!.env.example
+bridge-pkg/
+bridge.zip
+extension.zip
+release-notes.txt
 .DS_Store
 Thumbs.db
 apps/extension/.crx/
@@ -11,5 +18,3 @@ apps/bridge/data/
 doc
 docs/plans
 CLAUDE.md
-test/
-*.test.*

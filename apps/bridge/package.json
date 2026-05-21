@@ -1,6 +1,8 @@
 {
   "name": "@proxy2localai/bridge",
   "version": "0.1.0",
+  "description": "Local HTTP bridge for Proxy2LocalAI.",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "proxy2localai-bridge": "./dist/index.js"

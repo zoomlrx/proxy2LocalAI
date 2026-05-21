@@ -22,6 +22,10 @@ export interface CommandSpec {
   args: string[];
 }
 
+export interface ProviderCommandOptions {
+  allowDangerousCli?: boolean;
+}
+
 interface ExtractTextOptions {
   streaming?: boolean;
 }
@@ -203,34 +207,47 @@ function extractCustomProviderText(value: unknown): string {
   return "";
 }
 
-export function createProviderCommand(profile: ProxyProfile, streaming: boolean): CommandSpec {
+export function isDangerousCliAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
+  const value = env.PROXY2LOCALAI_ALLOW_DANGEROUS_CLI ?? env.web2LocalAgent_ALLOW_DANGEROUS_CLI ?? "";
+  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+}
+
+export function createProviderCommand(
+  profile: ProxyProfile,
+  streaming: boolean,
+  options: ProviderCommandOptions = {}
+): CommandSpec {
+  const allowDangerousCli = options.allowDangerousCli ?? isDangerousCliAllowed();
   if (profile.provider === "claude") {
+    const args = [
+      "-p",
+      "--output-format",
+      streaming ? "stream-json" : "json",
+      ...(streaming ? ["--verbose", "--include-partial-messages"] : [])
+    ];
+    if (allowDangerousCli) {
+      args.push("--dangerously-skip-permissions");
+    }
+    args.push("--tools", "");
     return {
       command: "claude",
-      args: [
-        "-p",
-        "--output-format",
-        streaming ? "stream-json" : "json",
-        ...(streaming ? ["--verbose", "--include-partial-messages"] : []),
-        "--dangerously-skip-permissions",
-        "--tools",
-        ""
-      ]
+      args
     };
   }
 
   if (profile.provider === "codex") {
+    const args = [
+      "exec",
+      "--skip-git-repo-check",
+      ...(allowDangerousCli ? ["--full-auto"] : []),
+      "--json",
+      "-C",
+      profile.projectDir,
+      "-"
+    ];
     return {
       command: "codex",
-      args: [
-        "exec",
-        "--skip-git-repo-check",
-        "--full-auto",
-        "--json",
-        "-C",
-        profile.projectDir,
-        "-"
-      ]
+      args
     };
   }
 

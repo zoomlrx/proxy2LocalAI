@@ -46,6 +46,7 @@ Invoke-RestMethod `
 
 重点看三类结果：
 
+- `本地 Token`：如果仍在使用默认 token，建议设置 `PROXY2LOCALAI_TOKEN` 后重启 Bridge。
 - `代理配置`：没有配置时，需要在扩展配置页导入或新增配置。
 - `数据目录`：不可写时，设置 `PROXY2LOCALAI_DATA_DIR` 到可写目录。
 - `Provider 命令`：找不到 `claude`、`codex` 或自定义命令时，需要安装 CLI 并加入 PATH。
@@ -112,3 +113,16 @@ Get-Content -Wait -Tail 80 "$env:APPDATA\Proxy2LocalAI\requests.log"
 - 有 `request_received`，但没有 `provider_spawn`：优先查 profile 是否启用、provider 配置是否完整。
 - 有 `provider_spawn`，但没有 `provider_first_chunk`：Claude/Codex 可能正在初始化 hooks、插件或 MCP，可以先放宽超时，或换一个更轻量的项目目录对照测试。
 - 有 `response_done_written`，但业务页面无结果：检查响应模式是否符合页面预期，必要时使用 `自定义 JSON` 模板。
+
+## 7. 危险 CLI 参数
+
+默认情况下，Bridge 不会给 Claude 添加 `--dangerously-skip-permissions`，也不会给 Codex 添加 `--full-auto`。
+
+如果你的本机 CLI 需要无人值守自动化，并且你确认项目目录可信，可以显式开启：
+
+```powershell
+$env:PROXY2LOCALAI_ALLOW_DANGEROUS_CLI="true"
+npm run start:bridge
+```
+
+开启后请优先使用独立测试目录验证，避免在重要仓库中直接运行未知请求。
