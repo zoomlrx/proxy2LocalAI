@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Proxy2LocalAI Demo</title>
+    <style>
+      :root {
+        color: #eef2f5;
+        background: #101114;
+        font-family: Inter, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+        font-size: 15px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        background:
+          linear-gradient(135deg, rgba(37, 194, 160, 0.08), transparent 38%),
+          linear-gradient(225deg, rgba(238, 172, 82, 0.08), transparent 32%),
+          #101114;
+      }
+
+      button,
+      input,
+      textarea {
+        font: inherit;
+      }
+
+      button {
+        min-height: 40px;
+        border: 1px solid #25c2a0;
+        border-radius: 6px;
+        background: #25c2a0;
+        color: #08110f;
+        cursor: pointer;
+        font-weight: 700;
+        padding: 0 18px;
+        transition: background 160ms ease, border-color 160ms ease, opacity 160ms ease;
+      }
+
+      button:hover {
+        border-color: #47d6b8;
+        background: #47d6b8;
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.52;
+      }
+
+      input,
+      textarea {
+        width: 100%;
+        border: 1px solid #2f343c;
+        border-radius: 8px;
+        background: #16181d;
+        color: #eef2f5;
+        outline: none;
+      }
+
+      input:focus,
+      textarea:focus {
+        border-color: #25c2a0;
+        box-shadow: 0 0 0 3px rgba(37, 194, 160, 0.14);
+      }
+
+      input {
+        min-height: 40px;
+        padding: 8px 10px;
+      }
+
+      textarea {
+        min-height: 58px;
+        max-height: 180px;
+        resize: vertical;
+        padding: 11px 12px;
+        line-height: 1.5;
+      }
+
+      label {
+        display: grid;
+        gap: 7px;
+        color: #a9b2bd;
+        font-size: 13px;
+      }
+
+      .page {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        gap: 14px;
+        width: min(980px, 100%);
+        min-height: 100vh;
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      .topbar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 14px;
+        align-items: end;
+        border: 1px solid #292e36;
+        border-radius: 8px;
+        background: rgba(22, 24, 29, 0.92);
+        padding: 14px;
+        box-shadow: 0 16px 42px rgba(0, 0, 0, 0.26);
+      }
+
+      .brand {
+        display: grid;
+        gap: 4px;
+        margin-bottom: 10px;
+      }
+
+      .brand h1 {
+        margin: 0;
+        color: #f6f8fa;
+        font-size: 20px;
+        letter-spacing: 0;
+      }
+
+      .brand p {
+        margin: 0;
+        color: #8f9aa6;
+        font-size: 13px;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 32px;
+        border: 1px solid #313741;
+        border-radius: 999px;
+        background: #1b1f26;
+        color: #c8d0d8;
+        padding: 0 12px;
+        white-space: nowrap;
+      }
+
+      .status.loading {
+        border-color: rgba(37, 194, 160, 0.42);
+        color: #7ce2ca;
+      }
+
+      .status.error {
+        border-color: rgba(231, 92, 92, 0.42);
+        color: #ff9b9b;
+      }
+
+      .chat-shell {
+        display: grid;
+        min-height: 0;
+        border: 1px solid #292e36;
+        border-radius: 8px;
+        background: rgba(17, 19, 24, 0.88);
+        overflow: hidden;
+        box-shadow: 0 18px 54px rgba(0, 0, 0, 0.28);
+      }
+
+      .chat-log {
+        display: grid;
+        align-content: start;
+        gap: 14px;
+        min-height: 420px;
+        max-height: calc(100vh - 250px);
+        overflow: auto;
+        padding: 18px;
+        scroll-behavior: smooth;
+      }
+
+      .message {
+        display: grid;
+        gap: 6px;
+        width: min(720px, 86%);
+      }
+
+      .message.user {
+        justify-self: end;
+      }
+
+      .message.assistant,
+      .message.error {
+        justify-self: start;
+      }
+
+      .meta {
+        color: #7e8994;
+        font-size: 12px;
+      }
+
+      .message.user .meta {
+        text-align: right;
+      }
+
+      .bubble {
+        border: 1px solid #303641;
+        border-radius: 8px;
+        background: #1a1d23;
+        color: #edf2f7;
+        line-height: 1.6;
+        padding: 12px 14px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+
+      .message.user .bubble {
+        border-color: rgba(37, 194, 160, 0.5);
+        background: #124238;
+      }
+
+      .message.error .bubble {
+        border-color: rgba(231, 92, 92, 0.54);
+        background: #3a1f24;
+        color: #ffd1d1;
+      }
+
+      .loading-dots {
+        display: inline-grid;
+        grid-auto-flow: column;
+        gap: 5px;
+        align-items: center;
+      }
+
+      .loading-dots span {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #7ce2ca;
+        animation: pulse 900ms ease-in-out infinite;
+      }
+
+      .loading-dots span:nth-child(2) {
+        animation-delay: 150ms;
+      }
+
+      .loading-dots span:nth-child(3) {
+        animation-delay: 300ms;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 0.32;
+        }
+
+        50% {
+          opacity: 1;
+        }
+      }
+
+      .composer {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: end;
+        border: 1px solid #292e36;
+        border-radius: 8px;
+        background: rgba(22, 24, 29, 0.94);
+        padding: 14px;
+        box-shadow: 0 16px 42px rgba(0, 0, 0, 0.22);
+      }
+
+      .hint {
+        color: #7e8994;
+        font-size: 12px;
+      }
+
+      @media (max-width: 720px) {
+        .page {
+          padding: 12px;
+        }
+
+        .topbar,
+        .composer {
+          grid-template-columns: 1fr;
+        }
+
+        .chat-log {
+          min-height: 360px;
+          max-height: calc(100vh - 310px);
+          padding: 14px;
+        }
+
+        .message {
+          width: 94%;
+        }
+
+        button {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="topbar" aria-label="请求配置">
+        <div>
+          <div class="brand">
+            <h1>Proxy2LocalAI Demo</h1>
+            <p>独立聊天测试页</p>
+          </div>
+          <label>
+            代理接口地址
+            <input
+              id="endpointInput"
+              type="url"
+              value="https://api.example.com/v1/chat/completions"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </label>
+        </div>
+        <div id="requestStatus" class="status">待发送</div>
+      </section>
+
+      <section class="chat-shell" aria-label="聊天记录">
+        <div id="chatLog" class="chat-log" aria-live="polite"></div>
+      </section>
+
+      <form id="chatForm" class="composer">
+        <label>
+          用户消息
+          <textarea
+            id="messageInput"
+            placeholder="输入要通过代理接口发送的内容"
+            autocomplete="off"
+          ></textarea>
+          <span class="hint">Enter 发送，Shift+Enter 换行</span>
+        </label>
+        <button id="sendButton" type="submit">发送</button>
+      </form>
+    </main>
+
+    <script>
+      const endpointInput = document.getElementById("endpointInput");
+      const chatLog = document.getElementById("chatLog");
+      const chatForm = document.getElementById("chatForm");
+      const messageInput = document.getElementById("messageInput");
+      const sendButton = document.getElementById("sendButton");
+      const requestStatus = document.getElementById("requestStatus");
+      const messages = [];
+
+      function setStatus(text, type) {
+        requestStatus.textContent = text;
+        requestStatus.className = type ? `status ${type}` : "status";
+      }
+
+      function formatTime() {
+        return new Intl.DateTimeFormat("zh-CN", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit"
+        }).format(new Date());
+      }
+
+      function addMessage(role, content, meta, options = {}) {
+        const wrapper = document.createElement("article");
+        wrapper.className = `message ${options.error ? "error" : role}`;
+
+        const metaElement = document.createElement("div");
+        metaElement.className = "meta";
+        metaElement.textContent = meta || (role === "user" ? `用户 · ${formatTime()}` : `代理返回 · ${formatTime()}`);
+
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+        if (options.loading) {
+          bubble.innerHTML = '<span class="loading-dots" aria-label="请求中"><span></span><span></span><span></span></span>';
+        } else {
+          bubble.textContent = content;
+        }
+
+        wrapper.append(metaElement, bubble);
+        chatLog.append(wrapper);
+        chatLog.scrollTop = chatLog.scrollHeight;
+        return wrapper;
+      }
+
+      function updateMessage(wrapper, content, meta, options = {}) {
+        wrapper.className = `message ${options.error ? "error" : "assistant"}`;
+        wrapper.querySelector(".meta").textContent = meta;
+        wrapper.querySelector(".bubble").textContent = content;
+        chatLog.scrollTop = chatLog.scrollHeight;
+      }
+
+      function parseSseContent(text) {
+        const chunks = [];
+        for (const line of text.split(/\r?\n/)) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) {
+            continue;
+          }
+          const data = trimmed.slice(5).trim();
+          if (!data || data === "[DONE]") {
+            continue;
+          }
+          try {
+            const parsed = JSON.parse(data);
+            const delta = parsed.choices?.[0]?.delta?.content;
+            const message = parsed.choices?.[0]?.message?.content;
+            if (typeof delta === "string") {
+              chunks.push(delta);
+            } else if (typeof message === "string") {
+              chunks.push(message);
+            }
+          } catch {
+            chunks.push(data);
+          }
+        }
+        return chunks.join("");
+      }
+
+      function parseProxyResponse(text, contentType) {
+        const sseText = parseSseContent(text);
+        if (sseText) {
+          return sseText;
+        }
+
+        const looksJson = contentType.includes("application/json") || /^[\[{]/.test(text.trim());
+        if (!looksJson) {
+          return text || "接口没有返回内容";
+        }
+
+        try {
+          const parsed = JSON.parse(text);
+          const choice = parsed.choices?.[0];
+          const content = choice?.message?.content ?? choice?.delta?.content ?? choice?.text;
+          if (typeof content === "string" && content.trim()) {
+            return content;
+          }
+          return JSON.stringify(parsed, null, 2);
+        } catch {
+          return text || "接口没有返回内容";
+        }
+      }
+
+      async function sendMessage() {
+        const endpoint = endpointInput.value.trim();
+        const userText = messageInput.value.trim();
+        if (!userText) {
+          setStatus("请输入消息", "error");
+          messageInput.focus();
+          return;
+        }
+
+        let url;
+        try {
+          url = new URL(endpoint);
+        } catch {
+          setStatus("接口地址无效", "error");
+          endpointInput.focus();
+          return;
+        }
+
+        messages.push({ role: "user", content: userText });
+        addMessage("user", userText);
+        messageInput.value = "";
+        messageInput.style.height = "";
+        sendButton.disabled = true;
+        messageInput.disabled = true;
+        endpointInput.disabled = true;
+        setStatus("请求中", "loading");
+
+        const pending = addMessage("assistant", "", "代理返回 · 请求中", { loading: true });
+        const startedAt = performance.now();
+        const body = {
+          model: "proxy2localai-demo",
+          messages: messages.map((item) => ({ role: item.role, content: item.content })),
+          stream: false
+        };
+
+        try {
+          const response = await fetch(url.href, {
+            method: "POST",
+            body: JSON.stringify(body)
+          });
+          const rawText = await response.text();
+          const elapsed = Math.round(performance.now() - startedAt);
+          const content = parseProxyResponse(rawText, response.headers.get("content-type") || "");
+          const meta = `代理返回 · HTTP ${response.status} · ${elapsed}ms`;
+
+          if (response.ok) {
+            messages.push({ role: "assistant", content });
+            updateMessage(pending, content, meta);
+            setStatus(`完成 · ${response.status} · ${elapsed}ms`);
+          } else {
+            updateMessage(pending, content, meta, { error: true });
+            setStatus(`请求失败 · ${response.status}`, "error");
+          }
+        } catch (error) {
+          const elapsed = Math.round(performance.now() - startedAt);
+          const message = error instanceof Error ? error.message : "未知错误";
+          updateMessage(
+            pending,
+            `请求没有完成：${message}`,
+            `代理返回 · 网络错误 · ${elapsed}ms`,
+            { error: true }
+          );
+          setStatus("网络错误", "error");
+        } finally {
+          sendButton.disabled = false;
+          messageInput.disabled = false;
+          endpointInput.disabled = false;
+          messageInput.focus();
+        }
+      }
+
+      chatForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        void sendMessage();
+      });
+
+      messageInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          chatForm.requestSubmit();
+        }
+      });
+
+      messageInput.addEventListener("input", () => {
+        messageInput.style.height = "auto";
+        messageInput.style.height = `${Math.min(messageInput.scrollHeight, 180)}px`;
+      });
+
+      addMessage("assistant", "已准备好发送 demo 请求。", "系统 · 就绪");
+      messageInput.focus();
+    </script>
+  </body>
+</html>

@@ -40,6 +40,16 @@ sh scripts/start-bridge.sh
 C:\project\demoProject\proxy2LocalAI\apps\extension\dist
 ```
 
+## Demo 聊天测试页
+
+项目内置一个单 HTML 暗黑聊天测试页：
+
+```text
+C:\project\demoProject\proxy2LocalAI\demo\index.html
+```
+
+使用前请先在扩展配置页创建并同步一套匹配 `https://api.example.com` + `/v1/chat/completions` + `POST` 的启用 profile。打开 demo 页面后，在聊天输入框输入内容并点击 `发送`，页面会向默认示例接口发起请求；如果插件规则命中，请求会被代理到本地 Bridge，返回内容会显示为聊天窗口中的代理回复。
+
 默认 Bridge 地址：
 
 ```text
