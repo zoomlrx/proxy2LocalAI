@@ -126,6 +126,66 @@ p {
   background: #fff;
 }
 
+.tool-row,
+.doctor-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 14px;
+  border: 1px solid #dbe2e7;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.tool-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.doctor-title {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.doctor-panel ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.doctor-check {
+  display: grid;
+  gap: 3px;
+  border-left: 4px solid #9aa8b2;
+  background: #f9fbfc;
+  padding: 9px 10px;
+}
+
+.doctor-check.ok {
+  border-left-color: #1b6b63;
+}
+
+.doctor-check.warning {
+  border-left-color: #b77a22;
+}
+
+.doctor-check.error {
+  border-left-color: #af3d35;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .layout {
   grid-template-columns: 280px minmax(0, 1fr);
   align-items: start;
@@ -363,6 +423,8 @@ legend {
 @media (max-width: 760px) {
   .topbar,
   .bridge-row,
+  .tool-row,
+  .doctor-title,
   .layout,
   .grid.two,
   .curl-panel {

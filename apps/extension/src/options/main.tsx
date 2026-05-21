@@ -1,8 +1,15 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { AppConfig, HttpMethod, ProxyProfile } from "@web2LocalAgent/shared";
+import {
+  createConfigExport,
+  parseConfigImport,
+  type AppConfig,
+  type ConfigExportMode,
+  type HttpMethod,
+  type ProxyProfile
+} from "@proxy2localai/shared";
 import { applyDynamicRules } from "../lib/dnr";
-import { getBridgeHealth, syncProfilesToBridge } from "../lib/bridgeApi";
+import { getBridgeDoctor, getBridgeHealth, type BridgeDoctorReport } from "../lib/bridgeApi";
 import { requestProfilePermission } from "../lib/permissions";
 import { getChromeConfigStorage } from "../lib/storage";
 import { syncBridgeThenApplyRules } from "../lib/sync";
@@ -19,10 +26,12 @@ const methods: HttpMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
 function OptionsApp() {
   const storage = useMemo(() => getChromeConfigStorage(), []);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [draft, setDraft] = useState<ProfileDraft>(() => createBlankProfile());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [status, setStatus] = useState("正在加载配置");
+  const [doctorReport, setDoctorReport] = useState<BridgeDoctorReport | null>(null);
   const [curlText, setCurlText] = useState("");
   const [pathDialogOpen, setPathDialogOpen] = useState(false);
   const [pathDraft, setPathDraft] = useState("");
@@ -49,10 +58,11 @@ function OptionsApp() {
     setConfig(saved);
     if (sync) {
       await syncBridgeThenApplyRules(saved);
+      setStatus("已保存并同步");
     } else {
       await applyDynamicRules(saved);
+      setStatus("已保存配置");
     }
-    setStatus("已保存并同步");
     return saved;
   }, [storage]);
 
@@ -116,6 +126,19 @@ function OptionsApp() {
     setStatus(health.ok ? `Bridge 在线，已同步 ${health.profileCount ?? 0} 套配置` : "Bridge 状态异常");
   }, [config]);
 
+  const runDoctor = useCallback(async () => {
+    if (!config) {
+      return;
+    }
+    const report = await getBridgeDoctor(config);
+    setDoctorReport(report);
+    const errorCount = report.checks.filter((check) => check.status === "error").length;
+    const warningCount = report.checks.filter((check) => check.status === "warning").length;
+    setStatus(report.ok
+      ? `Bridge 自检完成：${warningCount > 0 ? `${warningCount} 个提醒` : "全部通过"}`
+      : `Bridge 自检发现 ${errorCount} 个错误`);
+  }, [config]);
+
   const syncNow = useCallback(async () => {
     if (!config) {
       return;
@@ -123,6 +146,46 @@ function OptionsApp() {
     await syncBridgeThenApplyRules(config);
     setStatus("规则与 bridge 已同步");
   }, [config]);
+
+  const downloadConfig = useCallback((mode: ConfigExportMode) => {
+    if (!config) {
+      return;
+    }
+    const exported = createConfigExport(config, { mode });
+    const blob = new Blob([JSON.stringify(exported, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = mode === "backup" ? "proxy2localai-config-backup.json" : "proxy2localai-config-template.json";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    setStatus(mode === "backup" ? "已导出本机备份" : "已导出分享模板");
+  }, [config]);
+
+  const importConfigFile = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) {
+      return;
+    }
+
+    try {
+      const imported = parseConfigImport(JSON.parse(await file.text()));
+      const saved = await persistConfig(imported, false);
+      const firstProfile = saved.profiles[0];
+      setSelectedId(firstProfile?.id ?? null);
+      setDraft(firstProfile ? profileToDraft(firstProfile) : createBlankProfile());
+      setDoctorReport(null);
+      try {
+        await syncBridgeThenApplyRules(saved);
+        setStatus(`已导入 ${saved.profiles.length} 套配置并同步`);
+      } catch {
+        setStatus(`已导入 ${saved.profiles.length} 套配置，Bridge 未连接时可稍后同步`);
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? `导入失败：${error.message}` : "导入失败");
+    }
+  }, [persistConfig]);
 
   const updateDraft = <K extends keyof ProfileDraft>(key: K, value: ProfileDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -187,11 +250,12 @@ function OptionsApp() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <h1>web2LocalAgent</h1>
+          <h1>Proxy2LocalAI</h1>
           <p>{status}</p>
         </div>
         <div className="actions">
           <button type="button" onClick={() => void testBridge()}>测试 Bridge</button>
+          <button type="button" onClick={() => void runDoctor().catch((error) => setStatus(error instanceof Error ? error.message : "Bridge 自检失败"))}>自检 Bridge</button>
           <button type="button" onClick={() => void syncNow()}>同步</button>
         </div>
       </header>
@@ -213,6 +277,42 @@ function OptionsApp() {
         </label>
         <button type="button" onClick={() => void saveBridge()}>保存 Bridge</button>
       </section>
+
+      <section className="tool-row">
+        <div>
+          <strong>配置文件</strong>
+          <p>用于备份、迁移到另一台电脑，或把规则模板分享给其他人。</p>
+        </div>
+        <div className="actions">
+          <input
+            ref={importInputRef}
+            className="visually-hidden"
+            type="file"
+            accept="application/json,.json"
+            onChange={(event) => void importConfigFile(event)}
+          />
+          <button type="button" className="secondary" onClick={() => importInputRef.current?.click()}>导入配置</button>
+          <button type="button" className="secondary" onClick={() => downloadConfig("backup")}>导出备份</button>
+          <button type="button" className="secondary" onClick={() => downloadConfig("template")}>导出模板</button>
+        </div>
+      </section>
+
+      {doctorReport && (
+        <section className="doctor-panel">
+          <div className="doctor-title">
+            <strong>Bridge 自检</strong>
+            <small>{doctorReport.service} · {doctorReport.summary.enabledProfileCount}/{doctorReport.summary.profileCount} 启用</small>
+          </div>
+          <ul>
+            {doctorReport.checks.map((check) => (
+              <li key={check.id} className={`doctor-check ${check.status}`}>
+                <span>{check.label}</span>
+                <small>{check.message}</small>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="layout">
         <aside className="profile-list">
@@ -423,7 +523,7 @@ function OptionsApp() {
               <input
                 autoFocus
                 value={pathDraft}
-                placeholder="C:/project/demoProject/web2LocalAgent"
+                placeholder="C:/project/demoProject/proxy2LocalAI"
                 onChange={(event) => setPathDraft(event.target.value)}
               />
             </label>

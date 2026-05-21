@@ -1,5 +1,5 @@
 {
-  "name": "@web2LocalAgent/extension",
+  "name": "@proxy2localai/extension",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,6 +9,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@web2LocalAgent/shared": "0.1.0"
+    "@proxy2localai/shared": "0.1.0"
   }
 }

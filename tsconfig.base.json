@@ -15,7 +15,7 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@web2LocalAgent/shared": [
+      "@proxy2localai/shared": [
         "packages/shared/src/index.ts"
       ]
     }

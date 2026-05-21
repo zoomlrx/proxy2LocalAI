@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "web2LocalAgent",
+  "name": "Proxy2LocalAI",
   "version": "0.1.0",
   "description": "Proxy selected browser API requests to local Claude Code or Codex CLI.",
   "permissions": [
@@ -15,7 +15,7 @@
     "https://*/*"
   ],
   "action": {
-    "default_title": "web2LocalAgent",
+    "default_title": "Proxy2LocalAI",
     "default_popup": "popup.html"
   },
   "options_page": "options.html",

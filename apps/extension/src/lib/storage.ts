@@ -2,9 +2,10 @@ import {
   createEmptyConfig,
   normalizeConfig,
   type AppConfig
-} from "@web2LocalAgent/shared";
+} from "@proxy2localai/shared";
 
-export const STORAGE_KEY = "web2LocalAgent.config";
+export const STORAGE_KEY = "proxy2localai.config";
+export const LEGACY_STORAGE_KEY = "web2LocalAgent.config";
 
 export interface StorageArea {
   get(key: string): Promise<Record<string, unknown>>;
@@ -15,7 +16,10 @@ export function createConfigStorage(area: StorageArea) {
   return {
     async load(): Promise<AppConfig> {
       const stored = await area.get(STORAGE_KEY);
-      const raw = stored[STORAGE_KEY];
+      let raw = stored[STORAGE_KEY];
+      if (!raw) {
+        raw = (await area.get(LEGACY_STORAGE_KEY))[LEGACY_STORAGE_KEY];
+      }
       if (!raw) {
         return createEmptyConfig();
       }

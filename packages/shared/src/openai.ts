@@ -20,7 +20,7 @@ export function createChatCompletion(input: CreateChatCompletionInput) {
     id: input.id ?? createId(),
     object: "chat.completion",
     created: Math.floor(Date.now() / 1000),
-    model: input.model ?? "web2LocalAgent",
+    model: input.model ?? "proxy2localai",
     choices: [
       {
         index: 0,
@@ -39,7 +39,7 @@ export function createStreamChunk(input: CreateChatCompletionInput): string {
     id: input.id ?? createId(),
     object: "chat.completion.chunk",
     created: Math.floor(Date.now() / 1000),
-    model: input.model ?? "web2LocalAgent",
+    model: input.model ?? "proxy2localai",
     choices: [
       {
         index: 0,

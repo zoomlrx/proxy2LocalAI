@@ -1,4 +1,4 @@
-import type { AppConfig } from "@web2LocalAgent/shared";
+import type { AppConfig } from "@proxy2localai/shared";
 import { syncProfilesToBridge } from "./bridgeApi";
 import { applyDynamicRules } from "./dnr";
 

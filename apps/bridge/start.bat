@@ -1,3 +1,3 @@
 @echo off
-node "%~dp0index.js" %*
+node "%~dp0dist\index.js" %*
 pause

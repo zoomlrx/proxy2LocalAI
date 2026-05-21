@@ -1,5 +1,5 @@
 {
-  "name": "@web2LocalAgent/shared",
+  "name": "@proxy2localai/shared",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",

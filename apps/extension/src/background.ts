@@ -1,4 +1,4 @@
-import { getChromeConfigStorage, STORAGE_KEY } from "./lib/storage";
+import { getChromeConfigStorage, LEGACY_STORAGE_KEY, STORAGE_KEY } from "./lib/storage";
 import { syncBridgeThenApplyRules } from "./lib/sync";
 
 async function refreshProxyState(): Promise<void> {
@@ -20,7 +20,7 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === "local" && changes[STORAGE_KEY]) {
+  if (areaName === "local" && (changes[STORAGE_KEY] || changes[LEGACY_STORAGE_KEY])) {
     void refreshProxyState();
   }
 });

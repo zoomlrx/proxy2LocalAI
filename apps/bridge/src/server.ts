@@ -13,7 +13,7 @@ import {
   renderCustomJsonTemplate,
   validateCustomJsonTemplate,
   type ProxyProfile
-} from "@web2LocalAgent/shared";
+} from "@proxy2localai/shared";
 import {
   createDefaultProviders,
   createProviderLogger,
@@ -22,9 +22,13 @@ import {
   type ProviderRunContext,
   type ProviderRegistry
 } from "./providers";
+import { createDoctorReport } from "./doctor";
+import { getDefaultBridgeDataDir } from "./paths";
 
 export interface BridgeServerOptions {
+  port?: number;
   token?: string;
+  tokenSource?: string;
   providers?: ProviderRegistry;
   profilesPath?: string;
   requestsLogPath?: string;
@@ -34,7 +38,7 @@ interface RequestParameters {
   page: {
     url: string | null;
     origin: string | null;
-    source: "x-web2LocalAgent-page-url" | "referer" | "origin" | "unknown";
+    source: "x-proxy2localai-page-url" | "x-web2LocalAgent-page-url" | "referer" | "origin" | "unknown";
   };
   target: {
     origin: string;
@@ -60,9 +64,19 @@ class HttpError extends Error {
 }
 
 export function createBridgeServer(options: BridgeServerOptions = {}): http.Server {
-  const token = options.token ?? process.env.web2LocalAgent_TOKEN ?? DEFAULT_LOCAL_TOKEN;
-  const profilesPath = options.profilesPath ?? process.env.web2LocalAgent_PROFILES_PATH ?? join(process.cwd(), "apps", "bridge", "data", "profiles.json");
-  const requestsLogPath = options.requestsLogPath ?? process.env.web2LocalAgent_REQUESTS_LOG_PATH ?? join(process.cwd(), "apps", "bridge", "data", "requests.log");
+  const token = options.token ?? process.env.PROXY2LOCALAI_TOKEN ?? process.env.web2LocalAgent_TOKEN ?? DEFAULT_LOCAL_TOKEN;
+  const defaultDataDir = process.env.PROXY2LOCALAI_DATA_DIR ?? process.env.web2LocalAgent_DATA_DIR ?? getDefaultBridgeDataDir();
+  const profilesPath = options.profilesPath
+    ?? process.env.PROXY2LOCALAI_PROFILES_PATH
+    ?? process.env.web2LocalAgent_PROFILES_PATH
+    ?? join(defaultDataDir, "profiles.json");
+  const requestsLogPath = options.requestsLogPath
+    ?? process.env.PROXY2LOCALAI_REQUESTS_LOG_PATH
+    ?? process.env.web2LocalAgent_REQUESTS_LOG_PATH
+    ?? join(defaultDataDir, "requests.log");
+  const port = options.port ?? Number(process.env.PROXY2LOCALAI_PORT ?? process.env.web2LocalAgent_PORT ?? new URL("http://127.0.0.1:39399").port);
+  const tokenSource = options.tokenSource
+    ?? (process.env.PROXY2LOCALAI_TOKEN ? "PROXY2LOCALAI_TOKEN" : process.env.web2LocalAgent_TOKEN ? "web2LocalAgent_TOKEN" : "default local token");
   setProviderLogger(createProviderLogger(requestsLogPath));
   const profiles = loadProfiles(profilesPath);
   const providers = {
@@ -71,7 +85,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}): http.Serv
   };
 
   return http.createServer((req, res) => {
-    handleRequest(req, res, { token, profiles, profilesPath, requestsLogPath, providers }).catch((error: unknown) => {
+    handleRequest(req, res, { port, token, tokenSource, profiles, profilesPath, requestsLogPath, providers }).catch((error: unknown) => {
       const httpError = error instanceof HttpError
         ? error
         : new HttpError(500, "provider_error", error instanceof Error ? error.message : "未知错误");
@@ -85,6 +99,8 @@ async function handleRequest(
   res: ServerResponse,
   context: {
     token: string;
+    tokenSource: string;
+    port: number;
     profiles: Map<string, ProxyProfile>;
     profilesPath: string;
     requestsLogPath: string;
@@ -103,9 +119,21 @@ async function handleRequest(
   if (req.method === "GET" && url.pathname === "/health") {
     sendJson(res, 200, {
       ok: true,
-      service: "web2LocalAgent-bridge",
+      service: "proxy2localai-bridge",
       profileCount: context.profiles.size
     });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/doctor") {
+    assertAuthorized(req, url, context.token);
+    sendJson(res, 200, createDoctorReport({
+      port: context.port,
+      tokenSource: context.tokenSource,
+      profilesPath: context.profilesPath,
+      requestsLogPath: context.requestsLogPath,
+      profiles: Array.from(context.profiles.values())
+    }));
     return;
   }
 
@@ -306,7 +334,7 @@ function setCorsHeaders(req: IncomingMessage, res: ServerResponse): void {
   res.setHeader("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
   res.setHeader(
     "access-control-allow-headers",
-    requestedHeaders || "content-type,authorization,x-web2LocalAgent-token,x-web2LocalAgent-page-url"
+    requestedHeaders || "content-type,authorization,x-proxy2localai-token,x-web2LocalAgent-token,x-proxy2localai-page-url,x-web2LocalAgent-page-url"
   );
   res.setHeader("access-control-allow-private-network", "true");
   res.setHeader("access-control-max-age", "600");
@@ -321,7 +349,7 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 }
 
 function assertAuthorized(req: IncomingMessage, url: URL, expectedToken: string): void {
-  const headerToken = req.headers["x-web2LocalAgent-token"];
+  const headerToken = req.headers["x-proxy2localai-token"] ?? req.headers["x-web2localagent-token"];
   const actualToken = Array.isArray(headerToken) ? headerToken[0] : headerToken;
   const queryToken = url.searchParams.get("token");
   if ((actualToken ?? queryToken) !== expectedToken) {
@@ -411,7 +439,8 @@ async function buildRequestParameters(req: IncomingMessage, url: URL, profile: P
 
 function extractPageContext(headers: IncomingMessage["headers"]): RequestParameters["page"] {
   const candidates: Array<{ source: RequestParameters["page"]["source"]; value: string | undefined }> = [
-    { source: "x-web2LocalAgent-page-url", value: firstHeaderValue(headers["x-web2LocalAgent-page-url"]) },
+    { source: "x-proxy2localai-page-url", value: firstHeaderValue(headers["x-proxy2localai-page-url"]) },
+    { source: "x-web2LocalAgent-page-url", value: firstHeaderValue(headers["x-web2localagent-page-url"]) },
     { source: "referer", value: firstHeaderValue(headers.referer) },
     { source: "origin", value: firstHeaderValue(headers.origin) }
   ];
@@ -454,7 +483,7 @@ function sanitizeHeaders(headers: IncomingMessage["headers"]): Record<string, st
     if (value === undefined) {
       continue;
     }
-    if (key.toLowerCase() === "x-web2LocalAgent-token" || key.toLowerCase() === "authorization") {
+    if (key.toLowerCase() === "x-proxy2localai-token" || key.toLowerCase() === "x-web2localagent-token" || key.toLowerCase() === "authorization") {
       continue;
     }
     sanitized[key] = value;

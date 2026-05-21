@@ -9,7 +9,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      "@web2LocalAgent/shared": path.resolve(rootDir, "packages/shared/src/index.ts")
+      "@proxy2localai/shared": path.resolve(rootDir, "packages/shared/src/index.ts")
     }
   },
   build: {
