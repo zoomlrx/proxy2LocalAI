@@ -7,11 +7,15 @@ import {
   createErrorResponse,
   createStreamChunk,
   createStreamDone,
+  DEFAULT_SSE_DONE_EVENT,
+  DEFAULT_SSE_EVENT_MAPPINGS,
   DEFAULT_LOCAL_TOKEN,
   extractAiData,
+  extractPromptContext,
   normalizeProfiles,
   renderCustomJsonTemplate,
   validateCustomJsonTemplate,
+  type ConversationTurn,
   type ProxyProfile
 } from "@proxy2localai/shared";
 import {
@@ -20,7 +24,8 @@ import {
   setProviderLogger,
   type AiProviderAdapter,
   type ProviderRunContext,
-  type ProviderRegistry
+  type ProviderRegistry,
+  type ProviderStreamEvent
 } from "./providers";
 import { createDoctorReport } from "./doctor";
 import { getDefaultBridgeDataDir } from "./paths";
@@ -52,6 +57,8 @@ interface RequestParameters {
   };
 }
 
+const MAX_CONVERSATION_MESSAGES = 20;
+
 class HttpError extends Error {
   constructor(
     readonly status: number,
@@ -79,13 +86,14 @@ export function createBridgeServer(options: BridgeServerOptions = {}): http.Serv
     ?? (process.env.PROXY2LOCALAI_TOKEN ? "PROXY2LOCALAI_TOKEN" : process.env.web2LocalAgent_TOKEN ? "web2LocalAgent_TOKEN" : "default local token");
   setProviderLogger(createProviderLogger(requestsLogPath));
   const profiles = loadProfiles(profilesPath);
+  const conversationHistories = new Map<string, ConversationTurn[]>();
   const providers = {
     ...createDefaultProviders(),
     ...options.providers
   };
 
   return http.createServer((req, res) => {
-    handleRequest(req, res, { port, token, tokenSource, profiles, profilesPath, requestsLogPath, providers }).catch((error: unknown) => {
+    handleRequest(req, res, { port, token, tokenSource, profiles, profilesPath, requestsLogPath, providers, conversationHistories }).catch((error: unknown) => {
       const httpError = error instanceof HttpError
         ? error
         : new HttpError(500, "provider_error", error instanceof Error ? error.message : "未知错误");
@@ -105,6 +113,7 @@ async function handleRequest(
     profilesPath: string;
     requestsLogPath: string;
     providers: Required<ProviderRegistry>;
+    conversationHistories: Map<string, ConversationTurn[]>;
   }
 ): Promise<void> {
   setCorsHeaders(req, res);
@@ -165,7 +174,10 @@ async function handleRequest(
         targetPath: profile.targetPath,
         methods: profile.methods,
         provider: profile.provider,
-        responseMode: profile.responseMode
+        responseMode: profile.responseMode,
+        allowDangerousCli: profile.allowDangerousCli,
+        enableConversationMemory: profile.enableConversationMemory,
+        hasContextRegex: Boolean(profile.contextRegex)
       }))
     });
     return;
@@ -203,19 +215,34 @@ async function handleRequest(
     trackClientAbort(req, context.requestsLogPath, profile);
 
     const parameters = await buildRequestParameters(req, url, profile);
-    const prompt = composePrompt(parameters, profile.prompt);
+    const conversationKey = createConversationKey(profile, parameters);
+    const conversationHistory = profile.enableConversationMemory
+      ? context.conversationHistories.get(conversationKey) ?? []
+      : [];
+    const promptOptions = {
+      contextRegex: profile.contextRegex,
+      contextRegexFlags: profile.contextRegexFlags,
+      conversationHistory
+    };
+    const userContext = extractPromptContext(parameters, promptOptions);
+    const prompt = composePrompt(parameters, profile.prompt, promptOptions);
     const provider = context.providers[profile.provider] as AiProviderAdapter | undefined;
     if (!provider) {
       throw new HttpError(500, "provider_error", `未找到 provider: ${profile.provider}`);
     }
 
     if (profile.responseMode === "custom_json") {
-      await customJsonResponse(res, profile, provider, prompt, context.requestsLogPath);
+      await customJsonResponse(res, profile, provider, prompt, context.requestsLogPath, context.conversationHistories, conversationKey, userContext);
+      return;
+    }
+
+    if (profile.responseMode === "mapped_sse") {
+      await mappedSseResponse(res, profile, provider, prompt, context.requestsLogPath, context.conversationHistories, conversationKey, userContext);
       return;
     }
 
     if (profile.responseMode === "stream") {
-      await streamResponse(res, profile, provider, prompt, context.requestsLogPath);
+      await streamResponse(res, profile, provider, prompt, context.requestsLogPath, context.conversationHistories, conversationKey, userContext);
       return;
     }
 
@@ -226,6 +253,7 @@ async function handleRequest(
       responseMode: profile.responseMode
     });
     const content = await provider.generateText(profile, prompt);
+    rememberConversation(context.conversationHistories, profile, conversationKey, userContext, content);
     logRequestEvent(context.requestsLogPath, {
       stage: "provider_done",
       profileId: profile.id,
@@ -279,6 +307,7 @@ function createProviderStatusEvent(profile: ProxyProfile, event: Record<string, 
   };
   for (const key of [
     "command",
+    "args",
     "streaming",
     "promptChars",
     "bytes",
@@ -305,6 +334,29 @@ function createProviderStatusEvent(profile: ProxyProfile, event: Record<string, 
     }
   }
   return status;
+}
+
+function createConversationKey(profile: ProxyProfile, parameters: RequestParameters): string {
+  const pageKey = parameters.page.url ?? parameters.page.origin ?? "unknown";
+  return `${profile.id}:${pageKey}`;
+}
+
+function rememberConversation(
+  histories: Map<string, ConversationTurn[]>,
+  profile: ProxyProfile,
+  key: string,
+  userContent: string,
+  assistantContent: string
+): void {
+  if (!profile.enableConversationMemory) {
+    return;
+  }
+  const next = [
+    ...(histories.get(key) ?? []),
+    { role: "user" as const, content: userContent },
+    { role: "assistant" as const, content: assistantContent }
+  ].slice(-MAX_CONVERSATION_MESSAGES);
+  histories.set(key, next);
 }
 
 function extractProviderLineInfo(value: unknown): { type?: string; subtype?: string } {
@@ -496,7 +548,10 @@ async function streamResponse(
   profile: ProxyProfile,
   provider: AiProviderAdapter,
   prompt: string,
-  requestsLogPath: string
+  requestsLogPath: string,
+  conversationHistories: Map<string, ConversationTurn[]>,
+  conversationKey: string,
+  userContext: string
 ): Promise<void> {
   res.writeHead(200, {
     "content-type": "text/event-stream; charset=utf-8",
@@ -521,6 +576,7 @@ async function streamResponse(
     logRequestEvent(requestsLogPath, startEvent);
     res.write(createStatusEvent(startEvent));
     let chunkCount = 0;
+    let assistantContent = "";
     const providerContext: ProviderRunContext = {
       onEvent(event) {
         res.write(createStatusEvent(createProviderStatusEvent(profile, event)));
@@ -537,6 +593,7 @@ async function streamResponse(
         });
       }
       chunkCount += 1;
+      assistantContent += content;
       res.write(createStreamChunk({
         content,
         model: `local-${profile.provider}`
@@ -557,6 +614,7 @@ async function streamResponse(
       responseMode: profile.responseMode,
       chunkCount
     });
+    rememberConversation(conversationHistories, profile, conversationKey, userContext, assistantContent);
     res.write(createStreamDone());
     logRequestEvent(requestsLogPath, {
       stage: "response_done_written",
@@ -599,7 +657,10 @@ async function customJsonResponse(
   profile: ProxyProfile,
   provider: AiProviderAdapter,
   prompt: string,
-  requestsLogPath: string
+  requestsLogPath: string,
+  conversationHistories: Map<string, ConversationTurn[]>,
+  conversationKey: string,
+  userContext: string
 ): Promise<void> {
   validateCustomJsonTemplate(profile.customJsonTemplate);
   logRequestEvent(requestsLogPath, {
@@ -616,6 +677,7 @@ async function customJsonResponse(
     aiData,
     template: profile.customJsonTemplate
   });
+  rememberConversation(conversationHistories, profile, conversationKey, userContext, aiData);
   logRequestEvent(requestsLogPath, {
     stage: "provider_done",
     profileId: profile.id,
@@ -631,4 +693,113 @@ function sendRawJson(res: ServerResponse, status: number, body: string): void {
     "content-type": "application/json; charset=utf-8"
   });
   res.end(body);
+}
+
+async function mappedSseResponse(
+  res: ServerResponse,
+  profile: ProxyProfile,
+  provider: AiProviderAdapter,
+  prompt: string,
+  requestsLogPath: string,
+  conversationHistories: Map<string, ConversationTurn[]>,
+  conversationKey: string,
+  userContext: string
+): Promise<void> {
+  res.writeHead(200, {
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-cache, no-transform",
+    connection: "keep-alive"
+  });
+  logRequestEvent(requestsLogPath, {
+    stage: "response_headers_sent",
+    profileId: profile.id,
+    provider: profile.provider,
+    responseMode: profile.responseMode,
+    contentType: "text/event-stream; charset=utf-8"
+  });
+
+  const mappings = new Map((profile.sseEventMappings ?? DEFAULT_SSE_EVENT_MAPPINGS)
+    .map((mapping) => [mapping.source, mapping.targetEvent]));
+  const doneEvent = profile.sseDoneEvent ?? DEFAULT_SSE_DONE_EVENT;
+
+  try {
+    logRequestEvent(requestsLogPath, {
+      stage: "provider_start",
+      profileId: profile.id,
+      provider: profile.provider,
+      responseMode: profile.responseMode
+    });
+    let chunkCount = 0;
+    let assistantContent = "";
+    for await (const event of streamProviderEvents(provider, profile, prompt)) {
+      const targetEvent = mappings.get(event.source);
+      if (!targetEvent) {
+        continue;
+      }
+      chunkCount += 1;
+      if (event.source === "message" || targetEvent === "message") {
+        assistantContent += event.content;
+      }
+      res.write(createMappedSseTextEvent(targetEvent, event.content));
+      logRequestEvent(requestsLogPath, {
+        stage: "response_chunk_written",
+        profileId: profile.id,
+        provider: profile.provider,
+        responseMode: profile.responseMode,
+        sourceEvent: event.source,
+        targetEvent,
+        chunkIndex: chunkCount,
+        chunkChars: event.content.length
+      });
+    }
+    rememberConversation(conversationHistories, profile, conversationKey, userContext, assistantContent);
+    res.write(createMappedSseDataEvent(doneEvent.targetEvent, doneEvent.data));
+    logRequestEvent(requestsLogPath, {
+      stage: "response_done_written",
+      profileId: profile.id,
+      provider: profile.provider,
+      responseMode: profile.responseMode,
+      chunkCount,
+      targetEvent: doneEvent.targetEvent
+    });
+    res.end();
+  } catch (error) {
+    logRequestEvent(requestsLogPath, {
+      stage: "provider_error",
+      profileId: profile.id,
+      provider: profile.provider,
+      responseMode: profile.responseMode,
+      message: error instanceof Error ? error.message : "未知错误"
+    });
+    res.write(createMappedSseDataEvent("error", {
+      message: error instanceof Error ? error.message : "未知错误"
+    }));
+    res.write(createMappedSseDataEvent(doneEvent.targetEvent, doneEvent.data));
+    res.end();
+  }
+}
+
+async function* streamProviderEvents(
+  provider: AiProviderAdapter,
+  profile: ProxyProfile,
+  prompt: string
+): AsyncIterable<ProviderStreamEvent> {
+  if (provider.streamEvents) {
+    yield* provider.streamEvents(profile, prompt);
+    return;
+  }
+  for await (const content of provider.streamText(profile, prompt)) {
+    yield {
+      source: "message",
+      content
+    };
+  }
+}
+
+function createMappedSseTextEvent(event: string, content: string): string {
+  return `event:${event}\ndata:${JSON.stringify(JSON.stringify(content))}\n\n`;
+}
+
+function createMappedSseDataEvent(event: string, data: unknown): string {
+  return `event:${event}\ndata:${JSON.stringify(data)}\n\n`;
 }

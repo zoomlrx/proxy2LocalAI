@@ -26,13 +26,16 @@ flowchart LR
 - profile ID 限制为字母、数字、下划线和短横线。
 - 配置导入会经过 schema 归一化和校验。
 - Claude/Codex 的危险自动化参数默认关闭。
+- 危险 CLI 参数可以按 profile 显式开启，便于只对可信项目目录放开。
+- Claude/Codex 的追加参数来自用户显式配置，不会自动从网页请求中派生。
 
 ## 需要用户理解的风险
 
 - 默认 token 只适合本机开发和快速体验，长期使用请设置 `PROXY2LOCALAI_TOKEN`。
 - DNR 重定向需要把 token 放入本地 Bridge 查询参数，避免把 Bridge 地址暴露给不可信页面脚本。
-- 如果启用 `PROXY2LOCALAI_ALLOW_DANGEROUS_CLI=true`，Claude/Codex 可能在项目目录中执行更高权限的自动化操作。
+- 如果在 profile 中启用最高权限执行、填写危险追加参数，或设置 `PROXY2LOCALAI_ALLOW_DANGEROUS_CLI=true`，Claude/Codex 可能在项目目录中执行更高权限的自动化操作。
 - Custom Provider 会执行用户填写的本机命令，请只使用可信命令和参数。
+- 多轮上下文记忆保存在 Bridge 进程内存中，不写入磁盘；如果页面 URL 复用，应注意不同请求可能共享同一段临时上下文。
 
 ## 推荐配置
 

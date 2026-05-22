@@ -101,6 +101,7 @@ Get-Content -Wait -Tail 80 "$env:APPDATA\Proxy2LocalAI\requests.log"
 - `request_received`：Bridge 收到了代理请求。
 - `profile_matched`：请求匹配到了启用的 profile。
 - `provider_spawn`：Claude/Codex/Custom 进程已经启动。
+- `provider_spawn.args`：实际传给 Claude/Codex/Custom 的调用参数；如果看不到新参数，先确认 Bridge 已重启、扩展已重新加载并点击过同步。
 - `provider_stdout_line`：Provider 已经输出原始数据。
 - `provider_first_chunk`：Bridge 已解析到第一段可返回文本。
 - `provider_done`：Provider 正常结束。
@@ -112,13 +113,14 @@ Get-Content -Wait -Tail 80 "$env:APPDATA\Proxy2LocalAI\requests.log"
 - 没有 `request_received`：优先查扩展权限、DNR 规则、目标 URL 和 HTTP 方法是否匹配。
 - 有 `request_received`，但没有 `provider_spawn`：优先查 profile 是否启用、provider 配置是否完整。
 - 有 `provider_spawn`，但没有 `provider_first_chunk`：Claude/Codex 可能正在初始化 hooks、插件或 MCP，可以先放宽超时，或换一个更轻量的项目目录对照测试。
+- 如果确认卡在 CLI 权限确认，可以在对应 profile 中勾选 `最高权限执行本机 CLI`，或在 `AI 工具追加参数` 中显式填写 CLI 需要的参数后重试。同步后应在 `provider_spawn.args` 看到对应参数。
 - 有 `response_done_written`，但业务页面无结果：检查响应模式是否符合页面预期，必要时使用 `自定义 JSON` 模板。
 
 ## 7. 危险 CLI 参数
 
 默认情况下，Bridge 不会给 Claude 添加 `--dangerously-skip-permissions`，也不会给 Codex 添加 `--full-auto`。
 
-如果你的本机 CLI 需要无人值守自动化，并且你确认项目目录可信，可以显式开启：
+如果你的本机 CLI 需要无人值守自动化，并且你确认项目目录可信，优先在扩展配置页只为对应 profile 勾选 `最高权限执行本机 CLI`，或在 `AI 工具追加参数` 中逐行填写需要的参数。也可以通过环境变量全局开启：
 
 ```powershell
 $env:PROXY2LOCALAI_ALLOW_DANGEROUS_CLI="true"

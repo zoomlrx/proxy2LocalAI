@@ -1,7 +1,11 @@
 import {
+  DEFAULT_CONTEXT_REGEX_FLAGS,
   DEFAULT_MAX_BODY_BYTES,
+  DEFAULT_SSE_DONE_EVENT,
+  DEFAULT_SSE_EVENT_MAPPINGS,
   DEFAULT_TIMEOUT_MS,
   normalizeProfile,
+  type AppConfig,
   type AiProvider,
   type HttpMethod,
   type ProxyProfile,
@@ -18,13 +22,20 @@ export interface ProfileDraft {
   projectDir: string;
   provider: AiProvider;
   responseMode: ResponseMode;
+  allowDangerousCli: boolean;
+  enableConversationMemory: boolean;
   prompt: string;
   timeoutMs: number;
   maxBodyBytes: number;
+  contextRegex: string;
+  contextRegexFlags: string;
+  providerArgs: string;
   customCommand: string;
   customArgs: string;
   customJsonTemplate: string;
   sseDataEvents: string;
+  sseEventMappings: string;
+  sseDoneEvent: string;
 }
 
 export function createBlankProfile(projectDir = ""): ProfileDraft {
@@ -38,24 +49,40 @@ export function createBlankProfile(projectDir = ""): ProfileDraft {
     projectDir,
     provider: "claude",
     responseMode: "block",
+    allowDangerousCli: false,
+    enableConversationMemory: false,
     prompt: "",
     timeoutMs: DEFAULT_TIMEOUT_MS,
     maxBodyBytes: DEFAULT_MAX_BODY_BYTES,
+    contextRegex: "",
+    contextRegexFlags: DEFAULT_CONTEXT_REGEX_FLAGS,
+    providerArgs: "",
     customCommand: "",
     customArgs: "",
     customJsonTemplate: "",
-    sseDataEvents: "message"
+    sseDataEvents: "message",
+    sseEventMappings: DEFAULT_SSE_EVENT_MAPPINGS.map((mapping) => `${mapping.source}=${mapping.targetEvent}`).join("\n"),
+    sseDoneEvent: JSON.stringify(DEFAULT_SSE_DONE_EVENT.data, null, 2)
   };
 }
 
 export function profileToDraft(profile: ProxyProfile): ProfileDraft {
   return {
     ...profile,
+    allowDangerousCli: profile.allowDangerousCli,
+    enableConversationMemory: profile.enableConversationMemory,
     prompt: profile.prompt ?? "",
+    contextRegex: profile.contextRegex ?? "",
+    contextRegexFlags: profile.contextRegexFlags,
+    providerArgs: profile.providerArgs?.join("\n") ?? "",
     customCommand: profile.customCommand ?? "",
     customArgs: profile.customArgs?.join("\n") ?? "",
     customJsonTemplate: profile.customJsonTemplate ?? "",
-    sseDataEvents: profile.sseDataEvents?.join("\n") ?? "message"
+    sseDataEvents: profile.sseDataEvents?.join("\n") ?? "message",
+    sseEventMappings: (profile.sseEventMappings ?? DEFAULT_SSE_EVENT_MAPPINGS)
+      .map((mapping) => `${mapping.source}=${mapping.targetEvent}`)
+      .join("\n"),
+    sseDoneEvent: JSON.stringify(profile.sseDoneEvent?.data ?? DEFAULT_SSE_DONE_EVENT.data, null, 2)
   };
 }
 
@@ -63,7 +90,15 @@ export function draftToProfile(draft: ProfileDraft): ProxyProfile {
   return normalizeProfile({
     ...draft,
     prompt: draft.prompt || undefined,
+    allowDangerousCli: draft.allowDangerousCli,
+    enableConversationMemory: draft.enableConversationMemory,
     customCommand: draft.customCommand || undefined,
+    contextRegex: draft.contextRegex || undefined,
+    contextRegexFlags: draft.contextRegexFlags || DEFAULT_CONTEXT_REGEX_FLAGS,
+    providerArgs: draft.providerArgs
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean),
     customArgs: draft.customArgs
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -72,8 +107,20 @@ export function draftToProfile(draft: ProfileDraft): ProxyProfile {
     sseDataEvents: draft.sseDataEvents
       .split(/[\r\n,]+/)
       .map((line) => line.trim())
-      .filter(Boolean)
+      .filter(Boolean),
+    sseEventMappings: draft.sseEventMappings,
+    sseDoneEvent: draft.sseDoneEvent
   });
+}
+
+export function upsertProfile(config: AppConfig, profile: ProxyProfile): AppConfig {
+  const exists = config.profiles.some((item) => item.id === profile.id);
+  return {
+    ...config,
+    profiles: exists
+      ? config.profiles.map((item) => (item.id === profile.id ? profile : item))
+      : [...config.profiles, profile]
+  };
 }
 
 export function applyCurlToDraft(draft: ProfileDraft, curlCommand: string): ProfileDraft {

@@ -11,6 +11,7 @@ Proxy2LocalAI 是一个 Chrome/Edge MV3 浏览器扩展与本地 Bridge 服务�
 - 只代理启用 profile 中声明的目标域名、路径和 HTTP 方法。
 - 支持 OpenAI 兼容普通 JSON、流式 SSE 和自定义 JSON 模板。
 - 支持 Claude Code、Codex 和 Custom Provider。
+- 支持按 profile 启用多轮上下文记忆，并可用正则从接口参数中提取指定上下文。
 - 支持配置导入、备份和分享模板。
 - Bridge 自检可以定位 Node、配置目录、日志目录和 Provider 命令。
 - 默认只监听 `127.0.0.1`，管理接口和代理入口都需要本地 token。
@@ -176,11 +177,17 @@ Invoke-RestMethod `
 - Codex：默认执行 `codex exec --skip-git-repo-check --json -C <projectDir> -`。
 - Custom：执行用户配置的命令和参数，把提示词写入 stdin，stdout 作为 AI 输出。
 
-默认不会启用 Claude `--dangerously-skip-permissions` 或 Codex `--full-auto`。如果你明确需要无人值守自动化，并且理解本机项目目录风险，可以设置：
+Claude Code 和 Codex 都支持在扩展配置页填写 `AI 工具追加参数`，每行一个参数，Bridge 会追加到默认命令后。默认不会启用 Claude `--dangerously-skip-permissions` 或 Codex `--full-auto`。如果你明确需要无人值守自动化，并且理解本机项目目录风险，可以在扩展配置页为单个 profile 勾选 `最高权限执行本机 CLI`，也可以在追加参数中显式填写对应参数，或设置全局环境变量。勾选最高权限后，Claude 会同时使用 `--dangerously-skip-permissions` 和 `--permission-mode bypassPermissions`。
 
 ```powershell
 $env:PROXY2LOCALAI_ALLOW_DANGEROUS_CLI="true"
 ```
+
+## 上下文提取与多轮对话
+
+默认情况下，Bridge 会把页面、目标接口、请求头、查询参数和请求体整体拼入 `<parames>...</parames>`。如果拦截接口参数很多，可以在 profile 中填写 `接口参数上下文正则`，Bridge 会对这份 JSON 参数执行正则匹配；存在捕获组时使用第一个捕获组，否则使用完整匹配结果。留空则保持完整参数。
+
+勾选 `启用多轮上下文记忆` 后，Bridge 会按 `profile + 页面 URL` 在内存中保留最近 10 轮问答，并在下一次请求的 prompt 中追加 `<history>...</history>`。该记忆随 Bridge 进程重启清空，不会写入磁盘。
 
 ## 数据目录和环境变量
 

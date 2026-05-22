@@ -18,6 +18,7 @@ import {
   createBlankProfile,
   draftToProfile,
   profileToDraft,
+  upsertProfile,
   type ProfileDraft
 } from "./profileForm";
 import "../ui.css";
@@ -79,26 +80,27 @@ function OptionsApp() {
     setStatus("正在编辑新配置");
   }, [draft.projectDir]);
 
-  const saveProfile = useCallback(async () => {
+  const persistDraftProfile = useCallback(async () => {
     if (!config) {
-      return;
+      return null;
     }
     const profile = draftToProfile(draft);
     if (profile.enabled) {
       const granted = await requestProfilePermission(profile);
       if (!granted) {
         setStatus("目标域名权限未授予");
-        return;
+        return null;
       }
     }
-    const exists = config.profiles.some((item) => item.id === profile.id);
-    const profiles = exists
-      ? config.profiles.map((item) => (item.id === profile.id ? profile : item))
-      : [...config.profiles, profile];
-    const saved = await persistConfig({ ...config, profiles });
+    const saved = await persistConfig(upsertProfile(config, profile));
     setSelectedId(profile.id);
     setDraft(profileToDraft(saved.profiles.find((item) => item.id === profile.id) ?? profile));
+    return saved;
   }, [config, draft, persistConfig]);
+
+  const saveProfile = useCallback(async () => {
+    await persistDraftProfile();
+  }, [persistDraftProfile]);
 
   const deleteProfile = useCallback(async () => {
     if (!config || !selectedId) {
@@ -143,9 +145,14 @@ function OptionsApp() {
     if (!config) {
       return;
     }
+    if (selectedId) {
+      await persistDraftProfile();
+      setStatus("当前配置已保存并同步");
+      return;
+    }
     await syncBridgeThenApplyRules(config);
     setStatus("规则与 bridge 已同步");
-  }, [config]);
+  }, [config, persistDraftProfile, selectedId]);
 
   const downloadConfig = useCallback((mode: ConfigExportMode) => {
     if (!config) {
@@ -426,7 +433,27 @@ function OptionsApp() {
                 <option value="block">普通 JSON</option>
                 <option value="stream">流式 SSE</option>
                 <option value="custom_json">自定义 JSON</option>
+                <option value="mapped_sse">映射 SSE</option>
               </select>
+            </label>
+          </div>
+
+          <div className="grid two">
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={draft.allowDangerousCli}
+                onChange={(event) => updateDraft("allowDangerousCli", event.target.checked)}
+              />
+              最高权限执行本机 CLI
+            </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={draft.enableConversationMemory}
+                onChange={(event) => updateDraft("enableConversationMemory", event.target.checked)}
+              />
+              启用多轮上下文记忆
             </label>
           </div>
 
@@ -463,6 +490,40 @@ function OptionsApp() {
             </label>
           </div>
 
+          <section className="custom-json-panel">
+            <label>
+              接口参数上下文正则
+              <textarea
+                value={draft.contextRegex}
+                placeholder='"messages"\\s*:\\s*(\\[[\\s\\S]*?\\])'
+                onChange={(event) => updateDraft("contextRegex", event.target.value)}
+              />
+              <small>对请求参数 JSON 执行；存在捕获组时使用第一个捕获组，留空则使用完整参数。</small>
+            </label>
+            <label>
+              正则标记
+              <input
+                value={draft.contextRegexFlags}
+                placeholder="s"
+                onChange={(event) => updateDraft("contextRegexFlags", event.target.value)}
+              />
+            </label>
+          </section>
+
+          {draft.provider !== "custom" && (
+            <section className="custom-json-panel">
+              <label>
+                AI 工具追加参数
+                <textarea
+                  value={draft.providerArgs}
+                  placeholder="--dangerously-skip-permissions"
+                  onChange={(event) => updateDraft("providerArgs", event.target.value)}
+                />
+                <small>每行一个参数，会追加到 {draft.provider === "claude" ? "Claude Code" : "Codex"} 默认命令后。</small>
+              </label>
+            </section>
+          )}
+
           {draft.provider === "custom" && (
             <div className="grid two">
               <label>
@@ -495,6 +556,29 @@ function OptionsApp() {
                   onChange={(event) => updateDraft("customJsonTemplate", event.target.value)}
                 />
                 <small>使用 &lt;aiData/&gt; 表示聚合后的端侧 AI 数据；留空则直接返回 AI 数据。</small>
+              </label>
+            </section>
+          )}
+
+          {draft.responseMode === "mapped_sse" && (
+            <section className="custom-json-panel">
+              <label>
+                SSE 事件映射
+                <textarea
+                  value={draft.sseEventMappings}
+                  placeholder={"reasoning=reasoning\nmessage=message"}
+                  onChange={(event) => updateDraft("sseEventMappings", event.target.value)}
+                />
+                <small>每行一个 source=targetEvent；只返回已映射的 provider 事件。</small>
+              </label>
+              <label>
+                done 事件 JSON
+                <textarea
+                  value={draft.sseDoneEvent}
+                  placeholder='{"conversationId":"","status":"completed"}'
+                  onChange={(event) => updateDraft("sseDoneEvent", event.target.value)}
+                />
+                <small>请求结束时作为 event:done 的 data 返回。</small>
               </label>
             </section>
           )}

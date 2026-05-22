@@ -8,6 +8,7 @@ export interface AiProviderAdapter {
   generateText(profile: ProxyProfile, prompt: string, context?: ProviderRunContext): Promise<string>;
   generateRawText(profile: ProxyProfile, prompt: string, context?: ProviderRunContext): Promise<string>;
   streamText(profile: ProxyProfile, prompt: string, context?: ProviderRunContext): AsyncIterable<string>;
+  streamEvents?(profile: ProxyProfile, prompt: string, context?: ProviderRunContext): AsyncIterable<ProviderStreamEvent>;
 }
 
 export type ProviderRegistry = Partial<Record<AiProvider, AiProviderAdapter>>;
@@ -15,6 +16,11 @@ export type ProviderLogger = (event: Record<string, unknown>) => void;
 
 export interface ProviderRunContext {
   onEvent?: (event: Record<string, unknown>) => void;
+}
+
+export interface ProviderStreamEvent {
+  source: string;
+  content: string;
 }
 
 export interface CommandSpec {
@@ -85,6 +91,22 @@ export function extractTextFromProviderLine(line: string, options: ExtractTextOp
   }
 }
 
+export function extractProviderStreamEventFromLine(line: string): ProviderStreamEvent | null {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    return extractProviderStreamEvent(JSON.parse(trimmed) as unknown);
+  } catch {
+    return {
+      source: "message",
+      content: line
+    };
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -128,21 +150,96 @@ function extractStreamingProviderText(value: unknown): string {
     return "";
   }
 
+  return extractProviderStreamEvent(value)?.content ?? "";
+}
+
+function extractProviderStreamEvent(value: unknown): ProviderStreamEvent | null {
+  if (typeof value === "string") {
+    return {
+      source: "message",
+      content: value
+    };
+  }
+  if (Array.isArray(value)) {
+    const content = value.map((item) => extractProviderStreamEvent(item)?.content ?? "").join("");
+    return content ? { source: "message", content } : null;
+  }
+  if (!isRecord(value)) {
+    return null;
+  }
+
   if (value.type === "stream_event") {
-    return extractClaudeStreamEventText(value.event);
+    return extractClaudeStreamEvent(value.event);
   }
-  if (value.type === undefined) {
-    return extractCustomProviderText(value);
+  if (value.type === "assistant") {
+    const content = extractClaudeAssistantText(value.message);
+    return content ? { source: "message", content } : null;
   }
-  return "";
+
+  const source = inferProviderEventSource(value);
+  const content = extractProviderEventContent(value);
+  return content ? { source, content } : null;
 }
 
 function extractClaudeStreamEventText(event: unknown): string {
-  if (!isRecord(event) || event.type !== "content_block_delta" || !isRecord(event.delta)) {
-    return "";
+  return extractClaudeStreamEvent(event)?.content ?? "";
+}
+
+function extractClaudeStreamEvent(event: unknown): ProviderStreamEvent | null {
+  if (!isRecord(event)) {
+    return null;
+  }
+  if (event.type !== "content_block_delta" || !isRecord(event.delta)) {
+    const content = extractProviderEventContent(event);
+    return content ? { source: inferProviderEventSource(event), content } : null;
   }
   if (event.delta.type === "text_delta" && typeof event.delta.text === "string") {
-    return event.delta.text;
+    return {
+      source: "message",
+      content: event.delta.text
+    };
+  }
+  if ((event.delta.type === "thinking_delta" || event.delta.type === "reasoning_delta")) {
+    const content = extractProviderEventContent(event.delta);
+    return content ? { source: "reasoning", content } : null;
+  }
+  return null;
+}
+
+function inferProviderEventSource(record: Record<string, unknown>): string {
+  for (const key of ["event", "type", "subtype", "kind", "name"]) {
+    const value = record[key];
+    if (typeof value !== "string" || !value.trim()) {
+      continue;
+    }
+    const normalized = value.trim().toLowerCase();
+    if (normalized.includes("reasoning") || normalized.includes("thinking") || normalized.includes("thought")) {
+      return "reasoning";
+    }
+    if (normalized.includes("message") || normalized.includes("assistant") || normalized.includes("content") || normalized.includes("text") || normalized.includes("result")) {
+      return "message";
+    }
+    return normalized;
+  }
+  return "message";
+}
+
+function extractProviderEventContent(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(extractProviderEventContent).join("");
+  }
+  if (!isRecord(value)) {
+    return "";
+  }
+
+  for (const key of ["result", "text", "content", "delta", "message", "data", "thinking", "reasoning"]) {
+    const extracted = extractProviderEventContent(value[key]);
+    if (extracted) {
+      return extracted;
+    }
   }
   return "";
 }
@@ -217,8 +314,9 @@ export function createProviderCommand(
   streaming: boolean,
   options: ProviderCommandOptions = {}
 ): CommandSpec {
-  const allowDangerousCli = options.allowDangerousCli ?? isDangerousCliAllowed();
+  const allowDangerousCli = options.allowDangerousCli ?? (profile.allowDangerousCli || isDangerousCliAllowed());
   if (profile.provider === "claude") {
+    const providerArgs = profile.providerArgs ?? [];
     const args = [
       "-p",
       "--output-format",
@@ -226,12 +324,15 @@ export function createProviderCommand(
       ...(streaming ? ["--verbose", "--include-partial-messages"] : [])
     ];
     if (allowDangerousCli) {
-      args.push("--dangerously-skip-permissions");
+      args.push("--dangerously-skip-permissions", "--permission-mode", "bypassPermissions");
     }
-    args.push("--tools", "");
+    const mergedArgs = appendArgs(args, providerArgs, ["--dangerously-skip-permissions"]);
+    if (!providerArgs.includes("--tools")) {
+      mergedArgs.push("--tools", "");
+    }
     return {
       command: "claude",
-      args
+      args: mergedArgs
     };
   }
 
@@ -242,12 +343,13 @@ export function createProviderCommand(
       ...(allowDangerousCli ? ["--full-auto"] : []),
       "--json",
       "-C",
-      profile.projectDir,
-      "-"
+      profile.projectDir
     ];
+    const mergedArgs = appendArgs(args, profile.providerArgs, ["--full-auto"]);
+    mergedArgs.push("-");
     return {
       command: "codex",
-      args
+      args: mergedArgs
     };
   }
 
@@ -313,6 +415,20 @@ function logSpawn(
   });
 }
 
+function appendArgs(args: string[], extraArgs: string[] | undefined, duplicateBooleanFlags: string[] = []): string[] {
+  if (!extraArgs?.length) {
+    return args;
+  }
+  const next = [...args];
+  for (const arg of extraArgs) {
+    if (duplicateBooleanFlags.includes(arg) && next.includes(arg)) {
+      continue;
+    }
+    next.push(arg);
+  }
+  return next;
+}
+
 export function createCliProvider(): AiProviderAdapter {
   return {
     async generateText(profile, prompt, context) {
@@ -326,6 +442,10 @@ export function createCliProvider(): AiProviderAdapter {
     streamText(profile, prompt, context) {
       const spec = createProviderCommand(profile, true);
       return runCommandToStream(spec, profile, prompt, context);
+    },
+    streamEvents(profile, prompt, context) {
+      const spec = createProviderCommand(profile, true);
+      return runCommandToStreamEvents(spec, profile, prompt, context);
     }
   };
 }
@@ -452,6 +572,80 @@ async function* runCommandToStream(
       const text = extractTextFromProviderLine(line, { streaming: true });
       if (text) {
         yield text;
+      }
+    }
+  } finally {
+    lines.close();
+  }
+
+  const exit = await new Promise<ProcessExit>((resolve, reject) => {
+    child.on("error", reject);
+    child.on("close", (code, signal) => resolve({ code, signal }));
+  }).finally(() => {
+    if (timeout.timer) {
+      clearTimeout(timeout.timer);
+    }
+  });
+
+  const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();
+  emitProviderEvent(context, {
+    stage: "provider_exit",
+    provider: profile.provider,
+    code: exit.code,
+    signal: exit.signal,
+    timedOut: timeout.timedOut(),
+    stderrChars: stderr.length
+  });
+  if (timeout.timedOut()) {
+    throw new Error(`${spec.command} 超时 ${profile.timeoutMs}ms 后终止`);
+  }
+  if (exit.code !== 0) {
+    throw new Error(stderr || `${spec.command} 退出码 ${exit.code ?? "unknown"}`);
+  }
+}
+
+async function* runCommandToStreamEvents(
+  spec: CommandSpec,
+  profile: ProxyProfile,
+  prompt: string,
+  context?: ProviderRunContext
+): AsyncIterable<ProviderStreamEvent> {
+  logSpawn(profile, spec, prompt, true, context);
+  const child = spawn(spec.command, spec.args, {
+    cwd: profile.projectDir,
+    stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: true,
+    env: cleanSpawnEnv()
+  }) as ChildProcessWithoutNullStreams;
+  const timeout = killAfterTimeout(child, profile, spec, context);
+  const stderrChunks: Buffer[] = [];
+  child.stderr.on("data", (chunk: Buffer) => {
+    stderrChunks.push(chunk);
+    emitProviderEvent(context, {
+      stage: "provider_stderr",
+      provider: profile.provider,
+      bytes: chunk.length,
+      text: chunk.toString("utf8").slice(0, 1000)
+    });
+  });
+  writePrompt(child, prompt);
+
+  const lines = createInterface({
+    input: child.stdout,
+    crlfDelay: Infinity
+  });
+
+  try {
+    for await (const line of lines) {
+      emitProviderEvent(context, {
+        stage: "provider_stdout_line",
+        provider: profile.provider,
+        lineChars: line.length,
+        text: line.slice(0, 1000)
+      });
+      const event = extractProviderStreamEventFromLine(line);
+      if (event) {
+        yield event;
       }
     }
   } finally {
