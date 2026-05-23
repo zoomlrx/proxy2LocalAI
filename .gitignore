@@ -19,3 +19,4 @@ doc
 docs/plans
 CLAUDE.md
 **/*.test.*
+.playwright-mcp
