@@ -1,11 +1,15 @@
 import { execSync } from "node:child_process";
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { readRootPackageJson, getReleasePackageNames, getReleaseDir } from "./release-utils.mjs";
 
 const root = resolve(import.meta.dirname, "..");
-const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
+const pkg = readRootPackageJson();
 const version = pkg.version;
 const tag = `v${version}`;
+const [extensionPackageName, bridgePackageName] = getReleasePackageNames(version);
+const releaseDir = getReleaseDir();
+mkdirSync(releaseDir, { recursive: true });
 
 console.log(`\nProxy2LocalAI Release ${tag}\n`);
 
@@ -14,15 +18,15 @@ execSync("npm run build", { cwd: root, stdio: "inherit" });
 
 console.log("\n打包扩展...");
 const extensionDist = resolve(root, "apps/extension/dist");
-const extensionZip = resolve(root, "extension.zip");
+const extensionZip = resolve(releaseDir, extensionPackageName);
 rmSync(extensionZip, { force: true });
 zipDirectory(extensionDist, extensionZip);
-console.log("   -> extension.zip");
+console.log(`   -> ${extensionPackageName}`);
 
 console.log("打包 Bridge...");
 const bridgeDist = resolve(root, "apps/bridge/dist");
 const bridgeTmp = resolve(root, "bridge-pkg");
-const bridgeZip = resolve(root, "bridge.zip");
+const bridgeZip = resolve(releaseDir, bridgePackageName);
 
 rmSync(bridgeTmp, { recursive: true, force: true });
 rmSync(bridgeZip, { force: true });
@@ -63,7 +67,7 @@ writeFileSync(resolve(bridgeTmp, "README.txt"), [
 
 zipDirectory(bridgeTmp, bridgeZip);
 rmSync(bridgeTmp, { recursive: true, force: true });
-console.log("   -> bridge.zip");
+console.log(`   -> ${bridgePackageName}`);
 
 console.log("\n生成发布说明...");
 const notes = generateReleaseNotes(tag);
@@ -73,13 +77,13 @@ const notesFile = resolve(root, "release-notes.txt");
 writeFileSync(notesFile, notes, "utf8");
 
 try {
-  execSync(`gh release create ${tag} extension.zip bridge.zip --title "${tag}" --notes-file release-notes.txt`, {
+  execSync(`gh release create ${tag} "${extensionZip}" "${bridgeZip}" --title "${tag}" --notes-file release-notes.txt`, {
     cwd: root,
     stdio: "inherit"
   });
 } catch {
   console.log(`   Tag ${tag} 已存在，尝试上传产物...`);
-  execSync(`gh release upload ${tag} extension.zip bridge.zip --clobber`, {
+  execSync(`gh release upload ${tag} "${extensionZip}" "${bridgeZip}" --clobber`, {
     cwd: root,
     stdio: "inherit"
   });
@@ -88,6 +92,7 @@ try {
 rmSync(notesFile, { force: true });
 rmSync(extensionZip, { force: true });
 rmSync(bridgeZip, { force: true });
+rmSync(releaseDir, { recursive: true, force: true });
 
 console.log(`\nRelease ${tag} 发布完成。\n`);
 

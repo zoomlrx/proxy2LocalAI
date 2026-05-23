@@ -34,8 +34,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function createTemplateProfile(profile: ProxyProfile): ProxyProfile {
+  const { lastTestResult, ...rest } = profile;
   return {
-    ...profile,
+    ...rest,
     enabled: false,
     projectDir: TEMPLATE_PROJECT_DIR_PLACEHOLDER
   };

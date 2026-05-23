@@ -13,6 +13,16 @@ export type AiProvider = typeof AI_PROVIDERS[number];
 export const RESPONSE_MODES = ["block", "stream", "custom_json", "mapped_sse"] as const;
 export type ResponseMode = typeof RESPONSE_MODES[number];
 
+export type SetupMode = "wizard" | "advanced";
+export type SensitiveHeaderPolicy = "default" | "allow_all" | "custom";
+
+export interface LastTestResult {
+  ok: boolean;
+  testedAt: string;
+  stage: string;
+  message: string;
+}
+
 export interface SseEventMapping {
   source: string;
   targetEvent: string;
@@ -63,6 +73,11 @@ export interface ProxyProfile {
   sseDataEvents: string[];
   sseEventMappings?: SseEventMapping[];
   sseDoneEvent?: SseDoneEvent;
+  setupMode: SetupMode;
+  responseTemplateId: string;
+  sensitiveHeaderPolicy: SensitiveHeaderPolicy;
+  debugEnabled: boolean;
+  lastTestResult?: LastTestResult;
 }
 
 export interface AppConfig {
@@ -330,6 +345,15 @@ function normalizeSseDoneEvent(value: unknown): SseDoneEvent {
   };
 }
 
+function defaultTemplateForResponseMode(mode: ResponseMode): string {
+  switch (mode) {
+    case "stream": return "openai_sse";
+    case "custom_json": return "business_code_data_message";
+    case "mapped_sse": return "generic_sse";
+    default: return "openai_chat_json";
+  }
+}
+
 export function normalizeProfile(value: unknown): ProxyProfile {
   const input = asRecord(value, "profile");
   const id = asString(input.id, "id");
@@ -337,6 +361,7 @@ export function normalizeProfile(value: unknown): ProxyProfile {
     throw new Error("id 只能包含字母、数字、下划线和短横线，且最长 64 位");
   }
   const contextRegexFlags = normalizeRegexFlags(input.contextRegexFlags);
+  const responseMode = normalizeResponseMode(input.responseMode);
 
   return {
     id,
@@ -347,7 +372,7 @@ export function normalizeProfile(value: unknown): ProxyProfile {
     methods: normalizeMethods(input.methods),
     projectDir: asString(input.projectDir, "projectDir"),
     provider: normalizeProvider(input.provider),
-    responseMode: normalizeResponseMode(input.responseMode),
+    responseMode,
     allowDangerousCli: normalizeBoolean(input.allowDangerousCli, "allowDangerousCli", false),
     enableConversationMemory: normalizeBoolean(input.enableConversationMemory, "enableConversationMemory", false),
     prompt: asOptionalString(input.prompt, "prompt"),
@@ -361,7 +386,16 @@ export function normalizeProfile(value: unknown): ProxyProfile {
     customJsonTemplate: asOptionalString(input.customJsonTemplate, "customJsonTemplate"),
     sseDataEvents: normalizeEventNames(input.sseDataEvents),
     sseEventMappings: normalizeSseEventMappings(input.sseEventMappings),
-    sseDoneEvent: normalizeSseDoneEvent(input.sseDoneEvent)
+    sseDoneEvent: normalizeSseDoneEvent(input.sseDoneEvent),
+    setupMode: (input.setupMode === "wizard" ? "wizard" : "advanced") as SetupMode,
+    responseTemplateId: typeof input.responseTemplateId === "string" && input.responseTemplateId.trim()
+      ? input.responseTemplateId.trim()
+      : defaultTemplateForResponseMode(responseMode),
+    sensitiveHeaderPolicy: input.sensitiveHeaderPolicy === "allow_all" || input.sensitiveHeaderPolicy === "custom"
+      ? input.sensitiveHeaderPolicy
+      : "default",
+    debugEnabled: input.debugEnabled === undefined ? true : Boolean(input.debugEnabled),
+    lastTestResult: input.lastTestResult && typeof input.lastTestResult === "object" ? input.lastTestResult as LastTestResult : undefined,
   };
 }
 

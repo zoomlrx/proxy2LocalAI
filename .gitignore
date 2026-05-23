@@ -18,4 +18,4 @@ apps/bridge/data/
 doc
 docs/plans
 CLAUDE.md
-*.test.ts
+**/*.test.*

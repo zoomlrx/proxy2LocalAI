@@ -13,6 +13,7 @@ import {
   extractAiData,
   extractPromptContext,
   normalizeProfiles,
+  redactDiagnosticText,
   renderCustomJsonTemplate,
   validateCustomJsonTemplate,
   type ConversationTurn,
@@ -29,6 +30,7 @@ import {
 } from "./providers";
 import { createDoctorReport } from "./doctor";
 import { getDefaultBridgeDataDir } from "./paths";
+import { createDiagnosticsStore, type DiagnosticsStore } from "./diagnostics";
 
 export interface BridgeServerOptions {
   port?: number;
@@ -56,6 +58,9 @@ interface RequestParameters {
     body: unknown;
   };
 }
+
+const BRIDGE_VERSION = "0.1.0";
+const PROTOCOL_VERSION = 1;
 
 const MAX_CONVERSATION_MESSAGES = 20;
 
@@ -87,13 +92,14 @@ export function createBridgeServer(options: BridgeServerOptions = {}): http.Serv
   setProviderLogger(createProviderLogger(requestsLogPath));
   const profiles = loadProfiles(profilesPath);
   const conversationHistories = new Map<string, ConversationTurn[]>();
+  const diagnostics = createDiagnosticsStore({ limit: 20 });
   const providers = {
     ...createDefaultProviders(),
     ...options.providers
   };
 
   return http.createServer((req, res) => {
-    handleRequest(req, res, { port, token, tokenSource, profiles, profilesPath, requestsLogPath, providers, conversationHistories }).catch((error: unknown) => {
+    handleRequest(req, res, { port, token, tokenSource, profiles, profilesPath, requestsLogPath, providers, conversationHistories, diagnostics }).catch((error: unknown) => {
       const httpError = error instanceof HttpError
         ? error
         : new HttpError(500, "provider_error", error instanceof Error ? error.message : "未知错误");
@@ -114,6 +120,7 @@ async function handleRequest(
     requestsLogPath: string;
     providers: Required<ProviderRegistry>;
     conversationHistories: Map<string, ConversationTurn[]>;
+    diagnostics: DiagnosticsStore;
   }
 ): Promise<void> {
   setCorsHeaders(req, res);
@@ -129,6 +136,8 @@ async function handleRequest(
     sendJson(res, 200, {
       ok: true,
       service: "proxy2localai-bridge",
+      version: BRIDGE_VERSION,
+      protocolVersion: PROTOCOL_VERSION,
       profileCount: context.profiles.size
     });
     return;
@@ -183,9 +192,171 @@ async function handleRequest(
     return;
   }
 
+  // GET /diagnostics/recent - 最近请求列表
+  if (req.method === "GET" && url.pathname === "/diagnostics/recent") {
+    assertAuthorized(req, url, context.token);
+    sendJson(res, 200, {
+      items: context.diagnostics.listRecent()
+    });
+    return;
+  }
+
+  // GET /diagnostics/recent/:requestId - 请求详情
+  const diagDetailMatch = /^\/diagnostics\/recent\/([^/]+)$/.exec(url.pathname);
+  if (req.method === "GET" && diagDetailMatch) {
+    assertAuthorized(req, url, context.token);
+    const requestId = decodeURIComponent(diagDetailMatch[1]!);
+    const detail = context.diagnostics.getDetail(requestId);
+    if (!detail) {
+      throw new HttpError(404, "not_found", "诊断记录不存在");
+    }
+    sendJson(res, 200, detail);
+    return;
+  }
+
+  // GET /diagnostics/recent/:requestId/export - 脱敏导出
+  const diagExportMatch = /^\/diagnostics\/recent\/([^/]+)\/export$/.exec(url.pathname);
+  if (req.method === "GET" && diagExportMatch) {
+    assertAuthorized(req, url, context.token);
+    const requestId = decodeURIComponent(diagExportMatch[1]!);
+    const detail = context.diagnostics.getDetail(requestId);
+    if (!detail) {
+      throw new HttpError(404, "not_found", "诊断记录不存在");
+    }
+    const exportText = redactDiagnosticText(JSON.stringify({
+      summary: detail.summary,
+      stages: detail.stages
+    }, null, 2));
+    res.writeHead(200, {
+      "content-type": "text/plain; charset=utf-8"
+    });
+    res.end(exportText);
+    return;
+  }
+
+  const testProfileMatch = /^\/admin\/test-profile\/([^/]+)$/.exec(url.pathname);
+  if (req.method === "POST" && testProfileMatch) {
+    assertAuthorized(req, url, context.token);
+    const profileId = decodeURIComponent(testProfileMatch[1]!);
+    const profile = context.profiles.get(profileId);
+    if (!profile) {
+      throw new HttpError(404, "not_found", "代理配置不存在", { profileId });
+    }
+
+    const stages: Array<{ id: string; status: string; message?: string; duration?: number }> = [];
+    stages.push({ id: "profile_matched", status: "ok", message: `匹配到配置: ${profile.name}` });
+
+    const body = await readJsonBody(req, 1024 * 1024);
+    const sample = typeof body === "object" && body !== null ? body as Record<string, unknown> : {};
+
+    // 构建模拟请求参数
+    const sampleData = typeof sample.sample === "object" && sample.sample !== null
+      ? sample.sample as Record<string, unknown>
+      : {};
+    const sampleHeaders = typeof sampleData.headers === "object" && sampleData.headers !== null
+      ? sampleData.headers as Record<string, string>
+      : { "content-type": "application/json" };
+    const sampleBody = sampleData.body ?? { messages: [{ role: "user", content: "ping" }] };
+
+    const parameters: RequestParameters = {
+      page: { url: null, origin: null, source: "unknown" },
+      target: { origin: profile.targetOrigin, path: profile.targetPath },
+      request: {
+        method: "POST",
+        query: {},
+        headers: sampleHeaders,
+        body: sampleBody
+      }
+    };
+
+    stages.push({ id: "request_parsed", status: "ok" });
+
+    const promptOptions = {
+      contextRegex: profile.contextRegex,
+      contextRegexFlags: profile.contextRegexFlags,
+      conversationHistory: [] as ConversationTurn[]
+    };
+    const userContext = extractPromptContext(parameters, promptOptions);
+    const prompt = composePrompt(parameters, profile.prompt, promptOptions);
+
+    stages.push({ id: "prompt_composed", status: "ok", message: `提示词长度: ${prompt.length} 字符` });
+
+    const provider = context.providers[profile.provider] as AiProviderAdapter | undefined;
+    if (!provider) {
+      stages.push({ id: "provider_done", status: "error", message: `未找到 provider: ${profile.provider}` });
+      sendJson(res, 200, { ok: false, stages });
+      return;
+    }
+
+    try {
+      stages.push({ id: "provider_start", status: "ok", message: `调用 ${profile.provider}` });
+      const startTime = Date.now();
+      const content = await provider.generateText(profile, prompt);
+      const duration = Date.now() - startTime;
+      stages.push({
+        id: "provider_done",
+        status: "ok",
+        message: `输出 ${content.length} 字符`,
+        duration
+      });
+      sendJson(res, 200, { ok: true, stages, preview: content.slice(0, 500) });
+    } catch (error) {
+      stages.push({
+        id: "provider_done",
+        status: "error",
+        message: error instanceof Error ? error.message : "未知错误"
+      });
+      sendJson(res, 200, { ok: false, stages });
+    }
+    return;
+  }
+
+  // POST /admin/test-provider/:profileId - Provider 实际检测（最小 prompt）
+  const testProviderMatch = /^\/admin\/test-provider\/([^/]+)$/.exec(url.pathname);
+  if (req.method === "POST" && testProviderMatch) {
+    assertAuthorized(req, url, context.token);
+    const providerProfileId = decodeURIComponent(testProviderMatch[1]!);
+    const profile = context.profiles.get(providerProfileId);
+    if (!profile) {
+      throw new HttpError(404, "not_found", "代理配置不存在", { profileId: providerProfileId });
+    }
+
+    const provider = context.providers[profile.provider] as AiProviderAdapter | undefined;
+    if (!provider) {
+      sendJson(res, 200, {
+        ok: false,
+        provider: profile.provider,
+        output: null,
+        error: `未找到 provider: ${profile.provider}`
+      });
+      return;
+    }
+
+    try {
+      const startMs = Date.now();
+      const content = await provider.generateText(profile, "ping");
+      sendJson(res, 200, {
+        ok: true,
+        provider: profile.provider,
+        output: content.slice(0, 500),
+        outputChars: content.length,
+        duration: Date.now() - startMs
+      });
+    } catch (error) {
+      sendJson(res, 200, {
+        ok: false,
+        provider: profile.provider,
+        output: null,
+        error: error instanceof Error ? error.message : "未知错误"
+      });
+    }
+    return;
+  }
+
   const profileId = matchProxyProfileId(url.pathname);
   if (profileId) {
     assertAuthorized(req, url, context.token);
+    const diagRequestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     logRequestEvent(context.requestsLogPath, {
       stage: "request_received",
       profileId,
@@ -212,6 +383,20 @@ async function handleRequest(
       responseMode: profile.responseMode,
       enabled: profile.enabled
     });
+
+    const pageUrl = req.headers["x-proxy2localai-page-url"] as string | undefined
+      ?? (req.headers["x-web2localagent-page-url"] as string | undefined)
+      ?? req.headers.referer as string | undefined;
+    context.diagnostics.startRequest({
+      id: diagRequestId,
+      method,
+      targetUrl: `${profile.targetOrigin}${profile.targetPath}`,
+      profileId: profile.id,
+      pageUrl
+    });
+    context.diagnostics.addStage(diagRequestId, { id: "request_received", status: "ok" });
+    context.diagnostics.addStage(diagRequestId, { id: "profile_matched", status: "ok", message: profile.name });
+
     trackClientAbort(req, context.requestsLogPath, profile);
 
     const parameters = await buildRequestParameters(req, url, profile);
@@ -228,44 +413,66 @@ async function handleRequest(
     const prompt = composePrompt(parameters, profile.prompt, promptOptions);
     const provider = context.providers[profile.provider] as AiProviderAdapter | undefined;
     if (!provider) {
+      context.diagnostics.addStage(diagRequestId, { id: "provider_error", status: "error", message: `未找到 provider: ${profile.provider}` });
+      context.diagnostics.finishRequest(diagRequestId, { status: "error", errorStage: "provider_error" });
       throw new HttpError(500, "provider_error", `未找到 provider: ${profile.provider}`);
     }
 
-    if (profile.responseMode === "custom_json") {
-      await customJsonResponse(res, profile, provider, prompt, context.requestsLogPath, context.conversationHistories, conversationKey, userContext);
-      return;
-    }
+    context.diagnostics.addStage(diagRequestId, { id: "provider_spawn", status: "ok" });
 
-    if (profile.responseMode === "mapped_sse") {
-      await mappedSseResponse(res, profile, provider, prompt, context.requestsLogPath, context.conversationHistories, conversationKey, userContext);
-      return;
-    }
+    try {
+      if (profile.responseMode === "custom_json") {
+        await customJsonResponse(res, profile, provider, prompt, context.requestsLogPath, context.conversationHistories, conversationKey, userContext);
+        context.diagnostics.addStage(diagRequestId, { id: "response_done", status: "ok" });
+        context.diagnostics.finishRequest(diagRequestId, { status: "ok" });
+        return;
+      }
 
-    if (profile.responseMode === "stream") {
-      await streamResponse(res, profile, provider, prompt, context.requestsLogPath, context.conversationHistories, conversationKey, userContext);
-      return;
-    }
+      if (profile.responseMode === "mapped_sse") {
+        await mappedSseResponse(res, profile, provider, prompt, context.requestsLogPath, context.conversationHistories, conversationKey, userContext);
+        context.diagnostics.addStage(diagRequestId, { id: "response_done", status: "ok" });
+        context.diagnostics.finishRequest(diagRequestId, { status: "ok" });
+        return;
+      }
 
-    logRequestEvent(context.requestsLogPath, {
-      stage: "provider_start",
-      profileId: profile.id,
-      provider: profile.provider,
-      responseMode: profile.responseMode
-    });
-    const content = await provider.generateText(profile, prompt);
-    rememberConversation(context.conversationHistories, profile, conversationKey, userContext, content);
-    logRequestEvent(context.requestsLogPath, {
-      stage: "provider_done",
-      profileId: profile.id,
-      provider: profile.provider,
-      responseMode: profile.responseMode,
-      outputChars: content.length
-    });
-    sendJson(res, 200, createChatCompletion({
-      content,
-      model: `local-${profile.provider}`
-    }));
-    return;
+      if (profile.responseMode === "stream") {
+        await streamResponse(res, profile, provider, prompt, context.requestsLogPath, context.conversationHistories, conversationKey, userContext);
+        context.diagnostics.addStage(diagRequestId, { id: "response_done", status: "ok" });
+        context.diagnostics.finishRequest(diagRequestId, { status: "ok" });
+        return;
+      }
+
+      // block 模式
+      logRequestEvent(context.requestsLogPath, {
+        stage: "provider_start",
+        profileId: profile.id,
+        provider: profile.provider,
+        responseMode: profile.responseMode
+      });
+      const providerStartTime = Date.now();
+      const content = await provider.generateText(profile, prompt);
+      context.diagnostics.addStage(diagRequestId, { id: "provider_done", status: "ok", duration: Date.now() - providerStartTime });
+      rememberConversation(context.conversationHistories, profile, conversationKey, userContext, content);
+      logRequestEvent(context.requestsLogPath, {
+        stage: "provider_done",
+        profileId: profile.id,
+        provider: profile.provider,
+        responseMode: profile.responseMode,
+        outputChars: content.length
+      });
+      sendJson(res, 200, createChatCompletion({
+        content,
+        model: `local-${profile.provider}`
+      }));
+      context.diagnostics.addStage(diagRequestId, { id: "response_done", status: "ok" });
+      context.diagnostics.finishRequest(diagRequestId, { status: "ok" });
+      return;
+    } catch (error: unknown) {
+      const errorMsg = error instanceof Error ? error.message : "未知错误";
+      context.diagnostics.addStage(diagRequestId, { id: "provider_error", status: "error", message: errorMsg });
+      context.diagnostics.finishRequest(diagRequestId, { status: "error", errorStage: "provider_error" });
+      throw error;
+    }
   }
 
   throw new HttpError(404, "not_found", "路由不存在");

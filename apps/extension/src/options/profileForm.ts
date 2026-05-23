@@ -4,12 +4,16 @@ import {
   DEFAULT_SSE_DONE_EVENT,
   DEFAULT_SSE_EVENT_MAPPINGS,
   DEFAULT_TIMEOUT_MS,
+  getBuiltinResponseTemplate,
   normalizeProfile,
+  parseCurlCommand,
   type AppConfig,
   type AiProvider,
   type HttpMethod,
   type ProxyProfile,
-  type ResponseMode
+  type ResponseMode,
+  type SetupMode,
+  type SensitiveHeaderPolicy
 } from "@proxy2localai/shared";
 
 export interface ProfileDraft {
@@ -36,6 +40,11 @@ export interface ProfileDraft {
   sseDataEvents: string;
   sseEventMappings: string;
   sseDoneEvent: string;
+  setupMode: SetupMode;
+  responseTemplateId: string;
+  sensitiveHeaderPolicy: SensitiveHeaderPolicy;
+  debugEnabled: boolean;
+  lastTestResult: string;
 }
 
 export function createBlankProfile(projectDir = ""): ProfileDraft {
@@ -62,7 +71,12 @@ export function createBlankProfile(projectDir = ""): ProfileDraft {
     customJsonTemplate: "",
     sseDataEvents: "message",
     sseEventMappings: DEFAULT_SSE_EVENT_MAPPINGS.map((mapping) => `${mapping.source}=${mapping.targetEvent}`).join("\n"),
-    sseDoneEvent: JSON.stringify(DEFAULT_SSE_DONE_EVENT.data, null, 2)
+    sseDoneEvent: JSON.stringify(DEFAULT_SSE_DONE_EVENT.data, null, 2),
+    setupMode: "advanced",
+    responseTemplateId: "openai_chat_json",
+    sensitiveHeaderPolicy: "default",
+    debugEnabled: true,
+    lastTestResult: "",
   };
 }
 
@@ -82,7 +96,12 @@ export function profileToDraft(profile: ProxyProfile): ProfileDraft {
     sseEventMappings: (profile.sseEventMappings ?? DEFAULT_SSE_EVENT_MAPPINGS)
       .map((mapping) => `${mapping.source}=${mapping.targetEvent}`)
       .join("\n"),
-    sseDoneEvent: JSON.stringify(profile.sseDoneEvent?.data ?? DEFAULT_SSE_DONE_EVENT.data, null, 2)
+    sseDoneEvent: JSON.stringify(profile.sseDoneEvent?.data ?? DEFAULT_SSE_DONE_EVENT.data, null, 2),
+    setupMode: profile.setupMode,
+    responseTemplateId: profile.responseTemplateId,
+    sensitiveHeaderPolicy: profile.sensitiveHeaderPolicy,
+    debugEnabled: profile.debugEnabled,
+    lastTestResult: profile.lastTestResult ? JSON.stringify(profile.lastTestResult) : "",
   };
 }
 
@@ -109,7 +128,8 @@ export function draftToProfile(draft: ProfileDraft): ProxyProfile {
       .map((line) => line.trim())
       .filter(Boolean),
     sseEventMappings: draft.sseEventMappings,
-    sseDoneEvent: draft.sseDoneEvent
+    sseDoneEvent: draft.sseDoneEvent,
+    lastTestResult: draft.lastTestResult ? JSON.parse(draft.lastTestResult) : undefined,
   });
 }
 
@@ -121,6 +141,12 @@ export function upsertProfile(config: AppConfig, profile: ProxyProfile): AppConf
       ? config.profiles.map((item) => (item.id === profile.id ? profile : item))
       : [...config.profiles, profile]
   };
+}
+
+export type ProfileSection = "basic" | "advanced" | "expert";
+
+export function getDefaultExpandedSections(setupMode: SetupMode): ProfileSection[] {
+  return setupMode === "wizard" ? ["basic"] : ["basic", "advanced"];
 }
 
 export function applyCurlToDraft(draft: ProfileDraft, curlCommand: string): ProfileDraft {
@@ -136,144 +162,41 @@ export function applyCurlToDraft(draft: ProfileDraft, curlCommand: string): Prof
   };
 }
 
-function parseCurlCommand(curlCommand: string): { url: string; method: HttpMethod } {
-  const tokens = tokenizeCurl(curlCommand);
-  if (tokens[0]?.toLowerCase() === "curl") {
-    tokens.shift();
-  }
-
-  let url: string | undefined;
-  let method: HttpMethod | undefined;
-  let hasBody = false;
-
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
-    if (!token) {
-      continue;
-    }
-    if (token === "-X" || token === "--request") {
-      const next = tokens[index + 1];
-      if (next) {
-        method = normalizeCurlMethod(next);
-        index += 1;
-      }
-      continue;
-    }
-    if (token.startsWith("-X") && token.length > 2) {
-      method = normalizeCurlMethod(token.slice(2));
-      continue;
-    }
-    if (token === "--url") {
-      url = tokens[index + 1];
-      index += 1;
-      continue;
-    }
-    if (isBodyFlag(token)) {
-      hasBody = true;
-      if (!token.includes("=")) {
-        index += 1;
-      }
-      continue;
-    }
-    if (flagConsumesNextValue(token)) {
-      index += 1;
-      continue;
-    }
-    if (!token.startsWith("-") && looksLikeUrl(token)) {
-      url = token;
-    }
-  }
-
-  if (!url) {
-    throw new Error("cURL 中未找到 URL");
-  }
-
+export function createWizardProfileFromCurl(curlCommand: string, projectDir: string): ProfileDraft {
+  const blank = createBlankProfile(projectDir);
+  const filled = applyCurlToDraft(blank, curlCommand);
   return {
-    url,
-    method: method ?? (hasBody ? "POST" : "GET")
+    ...filled,
+    setupMode: "wizard",
+    provider: "claude",
+    responseMode: "stream",
+    responseTemplateId: "openai_sse"
   };
 }
 
-function tokenizeCurl(input: string): string[] {
-  const normalized = input.replace(/\\\r?\n/g, " ");
-  const tokens: string[] = [];
-  let current = "";
-  let quote: "'" | "\"" | null = null;
-  let escaping = false;
+export function applyTemplateToDraft(draft: ProfileDraft, templateId: string): ProfileDraft {
+  const template = getBuiltinResponseTemplate(templateId);
+  if (!template) return draft;
 
-  for (const char of normalized) {
-    if (escaping) {
-      current += char;
-      escaping = false;
-      continue;
-    }
-    if (char === "\\") {
-      escaping = true;
-      continue;
-    }
-    if (quote) {
-      if (char === quote) {
-        quote = null;
-      } else {
-        current += char;
-      }
-      continue;
-    }
-    if (char === "'" || char === "\"") {
-      quote = char;
-      continue;
-    }
-    if (/\s/.test(char)) {
-      if (current) {
-        tokens.push(current);
-        current = "";
-      }
-      continue;
-    }
-    current += char;
+  const updated: ProfileDraft = {
+    ...draft,
+    responseTemplateId: template.id,
+    responseMode: template.responseMode
+  };
+
+  if (template.customJsonTemplate !== undefined) {
+    updated.customJsonTemplate = template.customJsonTemplate;
   }
 
-  if (current) {
-    tokens.push(current);
+  if (template.sseEventMappings !== undefined) {
+    updated.sseEventMappings = template.sseEventMappings
+      .map((m) => `${m.source}=${m.targetEvent}`)
+      .join("\n");
   }
-  return tokens;
-}
 
-function normalizeCurlMethod(value: string): HttpMethod {
-  const method = value.toUpperCase();
-  if (method === "GET" || method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE") {
-    return method;
+  if (template.sseDataEvents !== undefined) {
+    updated.sseDataEvents = template.sseDataEvents.join("\n");
   }
-  throw new Error(`不支持的 cURL HTTP 方法: ${value}`);
-}
 
-function looksLikeUrl(value: string): boolean {
-  return /^https?:\/\//i.test(value);
-}
-
-function isBodyFlag(token: string): boolean {
-  return token === "-d"
-    || token === "--data"
-    || token === "--data-raw"
-    || token === "--data-binary"
-    || token === "--data-urlencode"
-    || token === "--json"
-    || token.startsWith("--data=")
-    || token.startsWith("--data-raw=")
-    || token.startsWith("--data-binary=")
-    || token.startsWith("--data-urlencode=")
-    || token.startsWith("--json=");
-}
-
-function flagConsumesNextValue(token: string): boolean {
-  return token === "-H"
-    || token === "--header"
-    || token === "-A"
-    || token === "--user-agent"
-    || token === "-u"
-    || token === "--user"
-    || token === "-b"
-    || token === "--cookie"
-    || token === "-o"
-    || token === "--output";
+  return updated;
 }

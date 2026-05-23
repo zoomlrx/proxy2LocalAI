@@ -5,11 +5,10 @@ import {
   parseConfigImport,
   type AppConfig,
   type ConfigExportMode,
-  type HttpMethod,
   type ProxyProfile
 } from "@proxy2localai/shared";
 import { applyDynamicRules } from "../lib/dnr";
-import { getBridgeDoctor, getBridgeHealth, type BridgeDoctorReport } from "../lib/bridgeApi";
+import { getBridgeDoctor, getBridgeHealth, testBridgeProvider, type BridgeDoctorReport, type BridgeHealth } from "../lib/bridgeApi";
 import { requestProfilePermission } from "../lib/permissions";
 import { getChromeConfigStorage } from "../lib/storage";
 import { syncBridgeThenApplyRules } from "../lib/sync";
@@ -21,9 +20,12 @@ import {
   upsertProfile,
   type ProfileDraft
 } from "./profileForm";
+import { BridgeStatusBar } from "./components/BridgeStatusBar";
+import { ProfileList } from "./components/ProfileList";
+import { ProfileEditor } from "./components/ProfileEditor";
+import { CreateProxyWizard } from "./components/CreateProxyWizard";
+import { RecentRequestsPanel } from "./components/RecentRequestsPanel";
 import "../ui.css";
-
-const methods: HttpMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
 function OptionsApp() {
   const storage = useMemo(() => getChromeConfigStorage(), []);
@@ -32,10 +34,13 @@ function OptionsApp() {
   const [draft, setDraft] = useState<ProfileDraft>(() => createBlankProfile());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [status, setStatus] = useState("正在加载配置");
+  const [health, setHealth] = useState<BridgeHealth | null>(null);
   const [doctorReport, setDoctorReport] = useState<BridgeDoctorReport | null>(null);
   const [curlText, setCurlText] = useState("");
   const [pathDialogOpen, setPathDialogOpen] = useState(false);
   const [pathDraft, setPathDraft] = useState("");
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [providerTestResult, setProviderTestResult] = useState<{ ok: boolean; output?: string | null; error?: string } | null>(null);
 
   const load = useCallback(async () => {
     const loaded = await storage.load();
@@ -45,7 +50,13 @@ function OptionsApp() {
       setSelectedId(firstProfile.id);
       setDraft(profileToDraft(firstProfile));
     }
-    setStatus("配置已加载");
+    try {
+      const result = await getBridgeHealth(loaded);
+      setHealth(result);
+      setStatus("配置已加载");
+    } catch {
+      setStatus("配置已加载（Bridge 未连接）");
+    }
   }, [storage]);
 
   useEffect(() => {
@@ -67,18 +78,33 @@ function OptionsApp() {
     return saved;
   }, [storage]);
 
+  const wizardComplete = useCallback(async (nextConfig: AppConfig) => {
+    const saved = await persistConfig(nextConfig);
+    setWizardOpen(false);
+    const firstProfile = saved.profiles[saved.profiles.length - 1];
+    if (firstProfile) {
+      setSelectedId(firstProfile.id);
+      setDraft(profileToDraft(firstProfile));
+    }
+  }, [persistConfig]);
+
   const selectProfile = useCallback((profile: ProxyProfile) => {
     setSelectedId(profile.id);
     setDraft(profileToDraft(profile));
   }, []);
 
   const addProfile = useCallback(() => {
+    if (!config) return;
+    if (config.profiles.length === 0) {
+      setWizardOpen(true);
+      return;
+    }
     const next = createBlankProfile(draft.projectDir);
     setSelectedId(next.id);
     setDraft(next);
     setCurlText("");
     setStatus("正在编辑新配置");
-  }, [draft.projectDir]);
+  }, [config, draft.projectDir]);
 
   const persistDraftProfile = useCallback(async () => {
     if (!config) {
@@ -124,8 +150,9 @@ function OptionsApp() {
     if (!config) {
       return;
     }
-    const health = await getBridgeHealth(config);
-    setStatus(health.ok ? `Bridge 在线，已同步 ${health.profileCount ?? 0} 套配置` : "Bridge 状态异常");
+    const result = await getBridgeHealth(config);
+    setHealth(result);
+    setStatus(result.ok ? `Bridge v${result.version ?? "?"} 在线，已同步 ${result.profileCount ?? 0} 套配置` : "Bridge 状态异常");
   }, [config]);
 
   const runDoctor = useCallback(async () => {
@@ -153,6 +180,20 @@ function OptionsApp() {
     await syncBridgeThenApplyRules(config);
     setStatus("规则与 bridge 已同步");
   }, [config, persistDraftProfile, selectedId]);
+
+  const testProvider = useCallback(async () => {
+    if (!config || !selectedId) {
+      return;
+    }
+    try {
+      const result = await testBridgeProvider(config, selectedId);
+      setProviderTestResult(result);
+      setStatus(result.ok ? "Provider 测试通过" : `Provider 测试失败: ${result.error ?? ""}`);
+    } catch (error) {
+      setProviderTestResult({ ok: false, error: error instanceof Error ? error.message : "测试失败" });
+      setStatus("Provider 测试请求失败");
+    }
+  }, [config, selectedId]);
 
   const downloadConfig = useCallback((mode: ConfigExportMode) => {
     if (!config) {
@@ -196,16 +237,6 @@ function OptionsApp() {
 
   const updateDraft = <K extends keyof ProfileDraft>(key: K, value: ProfileDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
-  };
-
-  const toggleMethod = (method: HttpMethod) => {
-    setDraft((current) => {
-      const hasMethod = current.methods.includes(method);
-      const nextMethods = hasMethod
-        ? current.methods.filter((item) => item !== method)
-        : [...current.methods, method];
-      return { ...current, methods: nextMethods.length ? nextMethods : [method] };
-    });
   };
 
   const fillFromCurl = useCallback(() => {
@@ -255,17 +286,14 @@ function OptionsApp() {
 
   return (
     <main className="shell">
-      <header className="topbar">
-        <div>
-          <h1>Proxy2LocalAI</h1>
-          <p>{status}</p>
-        </div>
-        <div className="actions">
-          <button type="button" onClick={() => void testBridge()}>测试 Bridge</button>
-          <button type="button" onClick={() => void runDoctor().catch((error) => setStatus(error instanceof Error ? error.message : "Bridge 自检失败"))}>自检 Bridge</button>
-          <button type="button" onClick={() => void syncNow()}>同步</button>
-        </div>
-      </header>
+      <BridgeStatusBar
+        status={status}
+        health={health}
+        doctorReport={doctorReport}
+        onTestBridge={() => void testBridge()}
+        onRunDoctor={() => void runDoctor().catch((error) => setStatus(error instanceof Error ? error.message : "Bridge 自检失败"))}
+        onSync={() => void syncNow()}
+      />
 
       <section className="bridge-row">
         <label>
@@ -304,297 +332,29 @@ function OptionsApp() {
         </div>
       </section>
 
-      {doctorReport && (
-        <section className="doctor-panel">
-          <div className="doctor-title">
-            <strong>Bridge 自检</strong>
-            <small>{doctorReport.service} · {doctorReport.summary.enabledProfileCount}/{doctorReport.summary.profileCount} 启用</small>
-          </div>
-          <ul>
-            {doctorReport.checks.map((check) => (
-              <li key={check.id} className={`doctor-check ${check.status}`}>
-                <span>{check.label}</span>
-                <small>{check.message}</small>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <RecentRequestsPanel config={config} setStatus={setStatus} />
 
       <section className="layout">
-        <aside className="profile-list">
-          <div className="list-title">
-            <strong>代理配置</strong>
-            <button type="button" onClick={addProfile}>新增</button>
-          </div>
-          {config.profiles.map((profile) => (
-            <div
-              key={profile.id}
-              className={profile.id === selectedId ? "profile-item active" : "profile-item"}
-            >
-              <button
-                type="button"
-                className="profile-item-name"
-                onClick={() => selectProfile(profile)}
-              >
-                <span>{profile.name}</span>
-                <small>{profile.enabled ? "启用" : "停用"} · {profile.provider} · {profile.responseMode}</small>
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  void toggleProfileEnabled(profile).catch((error) => setStatus(error instanceof Error ? error.message : "切换失败"));
-                }}
-              >
-                {profile.enabled ? "关闭" : "启动"}
-              </button>
-            </div>
-          ))}
-          {config.profiles.length === 0 && <p className="muted">还没有配置</p>}
-        </aside>
-
-        <form className="editor" onSubmit={(event) => {
-          event.preventDefault();
-          void saveProfile().catch((error) => setStatus(error instanceof Error ? error.message : "保存失败"));
-        }}>
-          <section className="curl-panel">
-            <label>
-              粘贴 cURL 配置
-              <textarea
-                value={curlText}
-                placeholder="curl 'https://api.example.com/v1/chat/completions' -X POST --data-raw '{...}'"
-                onChange={(event) => setCurlText(event.target.value)}
-              />
-            </label>
-            <button type="button" onClick={fillFromCurl}>从 cURL 填充</button>
-          </section>
-
-          <div className="grid two">
-            <label>
-              配置 ID
-              <input value={draft.id} onChange={(event) => updateDraft("id", event.target.value)} />
-            </label>
-            <label>
-              名称
-              <input value={draft.name} onChange={(event) => updateDraft("name", event.target.value)} />
-            </label>
-          </div>
-
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={draft.enabled}
-              onChange={(event) => updateDraft("enabled", event.target.checked)}
-            />
-            启用此代理
-          </label>
-
-          <div className="grid two">
-            <label>
-              目标地址
-              <input value={draft.targetOrigin} onChange={(event) => updateDraft("targetOrigin", event.target.value)} />
-            </label>
-            <label>
-              目标接口
-              <input value={draft.targetPath} onChange={(event) => updateDraft("targetPath", event.target.value)} />
-            </label>
-          </div>
-
-          <fieldset>
-            <legend>HTTP 方法</legend>
-            <div className="segmented">
-              {methods.map((method) => (
-                <label key={method}>
-                  <input
-                    type="checkbox"
-                    checked={draft.methods.includes(method)}
-                    onChange={() => toggleMethod(method)}
-                  />
-                  <span>{method}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-
-          <div className="grid two">
-            <label>
-              AI Provider
-              <select value={draft.provider} onChange={(event) => updateDraft("provider", event.target.value as ProfileDraft["provider"])}>
-                <option value="claude">Claude Code</option>
-                <option value="codex">Codex</option>
-                <option value="custom">Custom</option>
-              </select>
-            </label>
-            <label>
-              返回类型
-              <select value={draft.responseMode} onChange={(event) => updateDraft("responseMode", event.target.value as ProfileDraft["responseMode"])}>
-                <option value="block">普通 JSON</option>
-                <option value="stream">流式 SSE</option>
-                <option value="custom_json">自定义 JSON</option>
-                <option value="mapped_sse">映射 SSE</option>
-              </select>
-            </label>
-          </div>
-
-          <div className="grid two">
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={draft.allowDangerousCli}
-                onChange={(event) => updateDraft("allowDangerousCli", event.target.checked)}
-              />
-              最高权限执行本机 CLI
-            </label>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={draft.enableConversationMemory}
-                onChange={(event) => updateDraft("enableConversationMemory", event.target.checked)}
-              />
-              启用多轮上下文记忆
-            </label>
-          </div>
-
-          <label>
-            本地 AI 配置项目路径
-            <input
-              readOnly
-              value={draft.projectDir}
-              placeholder="点击选择或粘贴本地绝对路径"
-              onClick={openPathDialog}
-              onFocus={openPathDialog}
-            />
-          </label>
-
-          <div className="grid two">
-            <label>
-              超时 ms
-              <input
-                type="number"
-                min="0"
-                value={draft.timeoutMs}
-                onChange={(event) => updateDraft("timeoutMs", Number(event.target.value))}
-              />
-              <small>0 表示不限时。</small>
-            </label>
-            <label>
-              请求体上限 bytes（0 表示不限）
-              <input
-                type="number"
-                min="0"
-                value={draft.maxBodyBytes}
-                onChange={(event) => updateDraft("maxBodyBytes", Number(event.target.value))}
-              />
-            </label>
-          </div>
-
-          <section className="custom-json-panel">
-            <label>
-              接口参数上下文正则
-              <textarea
-                value={draft.contextRegex}
-                placeholder='"messages"\\s*:\\s*(\\[[\\s\\S]*?\\])'
-                onChange={(event) => updateDraft("contextRegex", event.target.value)}
-              />
-              <small>对请求参数 JSON 执行；存在捕获组时使用第一个捕获组，留空则使用完整参数。</small>
-            </label>
-            <label>
-              正则标记
-              <input
-                value={draft.contextRegexFlags}
-                placeholder="s"
-                onChange={(event) => updateDraft("contextRegexFlags", event.target.value)}
-              />
-            </label>
-          </section>
-
-          {draft.provider !== "custom" && (
-            <section className="custom-json-panel">
-              <label>
-                AI 工具追加参数
-                <textarea
-                  value={draft.providerArgs}
-                  placeholder="--dangerously-skip-permissions"
-                  onChange={(event) => updateDraft("providerArgs", event.target.value)}
-                />
-                <small>每行一个参数，会追加到 {draft.provider === "claude" ? "Claude Code" : "Codex"} 默认命令后。</small>
-              </label>
-            </section>
-          )}
-
-          {draft.provider === "custom" && (
-            <div className="grid two">
-              <label>
-                Custom 命令
-                <input value={draft.customCommand} onChange={(event) => updateDraft("customCommand", event.target.value)} />
-              </label>
-              <label>
-                Custom 参数
-                <textarea value={draft.customArgs} onChange={(event) => updateDraft("customArgs", event.target.value)} />
-              </label>
-            </div>
-          )}
-
-          {draft.responseMode === "custom_json" && (
-            <section className="custom-json-panel">
-              <label>
-                提取 SSE 事件名
-                <textarea
-                  value={draft.sseDataEvents}
-                  placeholder="message"
-                  onChange={(event) => updateDraft("sseDataEvents", event.target.value)}
-                />
-                <small>每行或逗号分隔一个事件名，默认 message。</small>
-              </label>
-              <label>
-                JSON 返回模板
-                <textarea
-                  value={draft.customJsonTemplate}
-                  placeholder='{ "code": 0, "data": <aiData/> }'
-                  onChange={(event) => updateDraft("customJsonTemplate", event.target.value)}
-                />
-                <small>使用 &lt;aiData/&gt; 表示聚合后的端侧 AI 数据；留空则直接返回 AI 数据。</small>
-              </label>
-            </section>
-          )}
-
-          {draft.responseMode === "mapped_sse" && (
-            <section className="custom-json-panel">
-              <label>
-                SSE 事件映射
-                <textarea
-                  value={draft.sseEventMappings}
-                  placeholder={"reasoning=reasoning\nmessage=message"}
-                  onChange={(event) => updateDraft("sseEventMappings", event.target.value)}
-                />
-                <small>每行一个 source=targetEvent；只返回已映射的 provider 事件。</small>
-              </label>
-              <label>
-                done 事件 JSON
-                <textarea
-                  value={draft.sseDoneEvent}
-                  placeholder='{"conversationId":"","status":"completed"}'
-                  onChange={(event) => updateDraft("sseDoneEvent", event.target.value)}
-                />
-                <small>请求结束时作为 event:done 的 data 返回。</small>
-              </label>
-            </section>
-          )}
-
-          <label>
-            提示词
-            <textarea value={draft.prompt} onChange={(event) => updateDraft("prompt", event.target.value)} />
-          </label>
-
-          <div className="actions">
-            <button type="submit">保存配置</button>
-            <button type="button" className="danger" disabled={!selectedProfile} onClick={() => void deleteProfile()}>
-              删除
-            </button>
-          </div>
-        </form>
+        <ProfileList
+          profiles={config.profiles}
+          selectedId={selectedId}
+          onSelect={selectProfile}
+          onAdd={addProfile}
+          onToggleEnabled={(profile) => void toggleProfileEnabled(profile).catch((error) => setStatus(error instanceof Error ? error.message : "切换失败"))}
+        />
+        <ProfileEditor
+          draft={draft}
+          curlText={curlText}
+          selectedProfile={selectedProfile ?? null}
+          onChangeDraft={updateDraft}
+          onChangeCurlText={setCurlText}
+          onFillFromCurl={fillFromCurl}
+          onOpenPathDialog={openPathDialog}
+          onSave={() => void saveProfile().catch((error) => setStatus(error instanceof Error ? error.message : "保存失败"))}
+          onDelete={() => void deleteProfile()}
+          onTestProvider={() => void testProvider()}
+          testResult={providerTestResult}
+        />
       </section>
 
       {pathDialogOpen && (
@@ -617,6 +377,15 @@ function OptionsApp() {
             </div>
           </section>
         </div>
+      )}
+
+      {wizardOpen && config && (
+        <CreateProxyWizard
+          config={config}
+          onComplete={(nextConfig) => void wizardComplete(nextConfig)}
+          onCancel={() => setWizardOpen(false)}
+          setStatus={setStatus}
+        />
       )}
     </main>
   );

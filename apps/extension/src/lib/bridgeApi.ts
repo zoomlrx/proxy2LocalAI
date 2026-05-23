@@ -1,8 +1,10 @@
-import type { AppConfig } from "@proxy2localai/shared";
+import type { AppConfig, RequestDiagnosticDetail, RequestDiagnosticSummary } from "@proxy2localai/shared";
 
 export interface BridgeHealth {
   ok: boolean;
   service?: string;
+  version?: string;
+  protocolVersion?: number;
   profileCount?: number;
 }
 
@@ -48,6 +50,109 @@ export async function getBridgeDoctor(config: AppConfig): Promise<BridgeDoctorRe
     throw new Error(`Bridge 自检失败: ${response.status} ${text}`);
   }
   return response.json() as Promise<BridgeDoctorReport>;
+}
+
+export interface TestProfileSample {
+  headers?: Record<string, string>;
+  body?: unknown;
+}
+
+export interface TestProfileStage {
+  id: string;
+  status: string;
+  message?: string;
+  duration?: number;
+}
+
+export interface TestProfileResult {
+  ok: boolean;
+  stages: TestProfileStage[];
+  preview?: string;
+}
+
+export async function testBridgeProfile(
+  config: AppConfig,
+  profileId: string,
+  sample: TestProfileSample = {}
+): Promise<TestProfileResult> {
+  const response = await fetch(
+    new URL(`/admin/test-profile/${encodeURIComponent(profileId)}`, config.bridgeBaseUrl),
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-proxy2localai-token": config.token
+      },
+      body: JSON.stringify({ sample })
+    }
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`测试代理失败: ${response.status} ${text}`);
+  }
+  return response.json() as Promise<TestProfileResult>;
+}
+
+export interface TestProviderResult {
+  ok: boolean;
+  provider?: string;
+  output?: string | null;
+  outputChars?: number;
+  duration?: number;
+  error?: string;
+}
+
+export async function testBridgeProvider(config: AppConfig, profileId: string): Promise<TestProviderResult> {
+  const response = await fetch(
+    new URL(`/admin/test-provider/${encodeURIComponent(profileId)}`, config.bridgeBaseUrl),
+    {
+      method: "POST",
+      headers: { "x-proxy2localai-token": config.token }
+    }
+  );
+  if (!response.ok) {
+    throw new Error(`测试 provider 失败: ${response.status}`);
+  }
+  return response.json() as Promise<TestProviderResult>;
+}
+
+export async function getRecentDiagnostics(config: AppConfig): Promise<{ items: RequestDiagnosticSummary[] }> {
+  const response = await fetch(new URL("/diagnostics/recent", config.bridgeBaseUrl), {
+    method: "GET",
+    headers: { "x-proxy2localai-token": config.token }
+  });
+  if (!response.ok) {
+    throw new Error(`获取诊断记录失败: ${response.status}`);
+  }
+  return response.json() as Promise<{ items: RequestDiagnosticSummary[] }>;
+}
+
+export async function getDiagnosticDetail(config: AppConfig, requestId: string): Promise<RequestDiagnosticDetail> {
+  const response = await fetch(
+    new URL(`/diagnostics/recent/${encodeURIComponent(requestId)}`, config.bridgeBaseUrl),
+    {
+      method: "GET",
+      headers: { "x-proxy2localai-token": config.token }
+    }
+  );
+  if (!response.ok) {
+    throw new Error(`获取诊断详情失败: ${response.status}`);
+  }
+  return response.json() as Promise<RequestDiagnosticDetail>;
+}
+
+export async function exportDiagnostic(config: AppConfig, requestId: string): Promise<string> {
+  const response = await fetch(
+    new URL(`/diagnostics/recent/${encodeURIComponent(requestId)}/export`, config.bridgeBaseUrl),
+    {
+      method: "GET",
+      headers: { "x-proxy2localai-token": config.token }
+    }
+  );
+  if (!response.ok) {
+    throw new Error(`导出诊断失败: ${response.status}`);
+  }
+  return response.text();
 }
 
 export async function syncProfilesToBridge(config: AppConfig): Promise<void> {

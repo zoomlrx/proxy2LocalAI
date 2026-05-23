@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { AppConfig } from "@proxy2localai/shared";
-import { getBridgeHealth } from "../lib/bridgeApi";
+import { getBridgeHealth, type BridgeHealth } from "../lib/bridgeApi";
 import { getChromeConfigStorage } from "../lib/storage";
 import { syncBridgeThenApplyRules } from "../lib/sync";
 import "../ui.css";
@@ -10,13 +10,15 @@ function PopupApp() {
   const storage = useMemo(() => getChromeConfigStorage(), []);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [status, setStatus] = useState("加载中");
+  const [health, setHealth] = useState<BridgeHealth | null>(null);
 
   const refresh = useCallback(async () => {
     const loaded = await storage.load();
     setConfig(loaded);
     try {
-      const health = await getBridgeHealth(loaded);
-      setStatus(health.ok ? "Bridge 在线" : "Bridge 状态异常");
+      const result = await getBridgeHealth(loaded);
+      setHealth(result);
+      setStatus(result.ok ? `Bridge 在线 v${result.version ?? ""}` : "Bridge 状态异常");
     } catch {
       setStatus("Bridge 未连接");
     }
