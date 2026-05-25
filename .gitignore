@@ -16,7 +16,7 @@ apps/extension/.crx/
 apps/bridge/data/
 .claude/
 doc
-docs/plans
+docs/plans/*
 CLAUDE.md
 **/*.test.*
 .playwright-mcp

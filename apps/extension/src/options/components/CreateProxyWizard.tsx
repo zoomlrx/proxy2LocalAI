@@ -1,14 +1,14 @@
 import React, { useCallback, useState } from "react";
 import { parseCurlCommand, type AppConfig } from "@proxy2localai/shared";
-import { getBridgeHealth, testBridgeProfile } from "../../lib/bridgeApi";
-import type { ProfileDraft } from "../profileForm";
-import { createWizardProfileFromCurl, draftToProfile, upsertProfile } from "../profileForm";
+import { getBridgeHealth, testBridgeProfileDraft } from "../../lib/bridgeApi";
+import type { CurlSummary, ProfileDraft } from "../profileForm";
+import { createWizardProfileFromCurl, draftToProfile, getRecommendedTemplateId, summarizeCurlCommand, upsertProfile } from "../profileForm";
 
 type WizardStep = "bridge" | "curl" | "ai" | "path" | "format" | "done";
 
 interface CreateProxyWizardProps {
   config: AppConfig;
-  onComplete: (config: AppConfig) => void;
+  onComplete: (config: AppConfig, options?: { keepOpen?: boolean }) => void | Promise<void>;
   onCancel: () => void;
   setStatus: (status: string) => void;
 }
@@ -22,6 +22,7 @@ export function CreateProxyWizard({ config, onComplete, onCancel, setStatus }: C
   const [bridgeOnline, setBridgeOnline] = useState<boolean | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; stages: Array<{ id: string; status: string; message?: string }> } | null>(null);
   const [draft, setDraft] = useState<ProfileDraft | null>(null);
+  const [curlSummary, setCurlSummary] = useState<CurlSummary | null>(null);
 
   const STEPS: WizardStep[] = ["bridge", "curl", "ai", "path", "format", "done"];
 
@@ -60,6 +61,9 @@ export function CreateProxyWizard({ config, onComplete, onCancel, setStatus }: C
     }
     try {
       parseCurlCommand(curlText);
+      const summary = summarizeCurlCommand(curlText);
+      setCurlSummary(summary);
+      setResponseMode(summary.stream ? "stream" : "block");
       goNext();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "cURL 解析失败");
@@ -72,15 +76,7 @@ export function CreateProxyWizard({ config, onComplete, onCancel, setStatus }: C
       const wizardDraft = createWizardProfileFromCurl(curlText, projectDir);
       wizardDraft.provider = provider;
       wizardDraft.responseMode = responseMode;
-      if (responseMode === "stream") {
-        wizardDraft.responseTemplateId = "openai_sse";
-      } else if (responseMode === "block") {
-        wizardDraft.responseTemplateId = "openai_chat_json";
-      } else if (responseMode === "mapped_sse") {
-        wizardDraft.responseTemplateId = "generic_sse";
-      } else {
-        wizardDraft.responseTemplateId = "business_code_data_message";
-      }
+      wizardDraft.responseTemplateId = getRecommendedTemplateId(responseMode);
       setDraft(wizardDraft);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "创建配置失败");
@@ -93,7 +89,7 @@ export function CreateProxyWizard({ config, onComplete, onCancel, setStatus }: C
     try {
       const profile = draftToProfile(draft);
       const nextConfig = upsertProfile(config, profile);
-      onComplete(nextConfig);
+      await onComplete(nextConfig);
       setStatus("向导配置已保存");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "保存失败");
@@ -105,10 +101,7 @@ export function CreateProxyWizard({ config, onComplete, onCancel, setStatus }: C
     if (!draft) return;
     try {
       const profile = draftToProfile(draft);
-      const nextConfig = upsertProfile(config, profile);
-      // 先保存再测试
-      onComplete(nextConfig);
-      const result = await testBridgeProfile(nextConfig, profile.id, {
+      const result = await testBridgeProfileDraft(config, profile, {
         headers: { "content-type": "application/json" },
         body: { messages: [{ role: "user", content: "ping" }] }
       });
@@ -118,7 +111,7 @@ export function CreateProxyWizard({ config, onComplete, onCancel, setStatus }: C
       setTestResult({ ok: false, stages: [{ id: "network", status: "error", message: error instanceof Error ? error.message : "测试失败" }] });
       setStatus("测试请求失败");
     }
-  }, [draft, config, onComplete, setStatus]);
+  }, [draft, config, setStatus]);
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -133,6 +126,15 @@ export function CreateProxyWizard({ config, onComplete, onCancel, setStatus }: C
         </div>
 
         <div className="wizard-body">
+          {curlSummary && step !== "bridge" && step !== "curl" && (
+            <dl className="wizard-summary wizard-request-summary">
+              <div><dt>域名</dt><dd>{curlSummary.origin}</dd></div>
+              <div><dt>路径</dt><dd>{curlSummary.path}</dd></div>
+              <div><dt>方法</dt><dd>{curlSummary.method}</dd></div>
+              <div><dt>请求体</dt><dd>{curlSummary.bodySummary}</dd></div>
+              <div><dt>流式</dt><dd>{curlSummary.stream ? "是" : "否"}</dd></div>
+            </dl>
+          )}
           {step === "bridge" && (
             <div className="wizard-step">
               <h3>检查 Bridge 服务</h3>
@@ -163,6 +165,15 @@ export function CreateProxyWizard({ config, onComplete, onCancel, setStatus }: C
                 onChange={(e) => setCurlText(e.target.value)}
                 rows={6}
               />
+              {curlSummary && (
+                <dl className="wizard-summary">
+                  <div><dt>域名</dt><dd>{curlSummary.origin}</dd></div>
+                  <div><dt>路径</dt><dd>{curlSummary.path}</dd></div>
+                  <div><dt>方法</dt><dd>{curlSummary.method}</dd></div>
+                  <div><dt>请求体</dt><dd>{curlSummary.bodySummary}</dd></div>
+                  <div><dt>流式</dt><dd>{curlSummary.stream ? "是" : "否"}</dd></div>
+                </dl>
+              )}
               <div className="actions">
                 <button type="button" className="secondary" onClick={goBack}>上一步</button>
                 <button type="button" onClick={parseCurl}>下一步</button>
@@ -216,12 +227,12 @@ export function CreateProxyWizard({ config, onComplete, onCancel, setStatus }: C
               <div className="wizard-options">
                 <label className={`wizard-option ${responseMode === "stream" ? "selected" : ""}`}>
                   <input type="radio" name="format" checked={responseMode === "stream"} onChange={() => setResponseMode("stream")} />
-                  <strong>流式 SSE（推荐）</strong>
+                  <strong>流式 SSE{curlSummary?.stream !== false ? "（推荐）" : ""}</strong>
                   <small>逐字流式返回，适合聊天场景</small>
                 </label>
                 <label className={`wizard-option ${responseMode === "block" ? "selected" : ""}`}>
                   <input type="radio" name="format" checked={responseMode === "block"} onChange={() => setResponseMode("block")} />
-                  <strong>普通 JSON</strong>
+                  <strong>普通 JSON{curlSummary?.stream === false ? "（推荐）" : ""}</strong>
                   <small>等待完整响应后返回</small>
                 </label>
                 <label className={`wizard-option ${responseMode === "mapped_sse" ? "selected" : ""}`}>

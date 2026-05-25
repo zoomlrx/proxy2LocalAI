@@ -243,71 +243,21 @@ async function handleRequest(
       throw new HttpError(404, "not_found", "代理配置不存在", { profileId });
     }
 
-    const stages: Array<{ id: string; status: string; message?: string; duration?: number }> = [];
-    stages.push({ id: "profile_matched", status: "ok", message: `匹配到配置: ${profile.name}` });
-
     const body = await readJsonBody(req, 1024 * 1024);
     const sample = typeof body === "object" && body !== null ? body as Record<string, unknown> : {};
+    sendJson(res, 200, await runProfileTest(profile, sample, context.providers, `匹配到配置: ${profile.name}`));
+    return;
+  }
 
-    // 构建模拟请求参数
-    const sampleData = typeof sample.sample === "object" && sample.sample !== null
-      ? sample.sample as Record<string, unknown>
-      : {};
-    const sampleHeaders = typeof sampleData.headers === "object" && sampleData.headers !== null
-      ? sampleData.headers as Record<string, string>
-      : { "content-type": "application/json" };
-    const sampleBody = sampleData.body ?? { messages: [{ role: "user", content: "ping" }] };
-
-    const parameters: RequestParameters = {
-      page: { url: null, origin: null, source: "unknown" },
-      target: { origin: profile.targetOrigin, path: profile.targetPath },
-      request: {
-        method: "POST",
-        query: {},
-        headers: sampleHeaders,
-        body: sampleBody
-      }
-    };
-
-    stages.push({ id: "request_parsed", status: "ok" });
-
-    const promptOptions = {
-      contextRegex: profile.contextRegex,
-      contextRegexFlags: profile.contextRegexFlags,
-      conversationHistory: [] as ConversationTurn[]
-    };
-    const userContext = extractPromptContext(parameters, promptOptions);
-    const prompt = composePrompt(parameters, profile.prompt, promptOptions);
-
-    stages.push({ id: "prompt_composed", status: "ok", message: `提示词长度: ${prompt.length} 字符` });
-
-    const provider = context.providers[profile.provider] as AiProviderAdapter | undefined;
-    if (!provider) {
-      stages.push({ id: "provider_done", status: "error", message: `未找到 provider: ${profile.provider}` });
-      sendJson(res, 200, { ok: false, stages });
-      return;
+  if (req.method === "POST" && url.pathname === "/admin/test-profile-draft") {
+    assertAuthorized(req, url, context.token);
+    const body = await readJsonBody(req, 1024 * 1024);
+    const input = asRecord(body, "body");
+    const [profile] = normalizeProfiles([input.profile]);
+    if (!profile) {
+      throw new HttpError(400, "bad_request", "profile 必须是合法代理配置");
     }
-
-    try {
-      stages.push({ id: "provider_start", status: "ok", message: `调用 ${profile.provider}` });
-      const startTime = Date.now();
-      const content = await provider.generateText(profile, prompt);
-      const duration = Date.now() - startTime;
-      stages.push({
-        id: "provider_done",
-        status: "ok",
-        message: `输出 ${content.length} 字符`,
-        duration
-      });
-      sendJson(res, 200, { ok: true, stages, preview: content.slice(0, 500) });
-    } catch (error) {
-      stages.push({
-        id: "provider_done",
-        status: "error",
-        message: error instanceof Error ? error.message : "未知错误"
-      });
-      sendJson(res, 200, { ok: false, stages });
-    }
+    sendJson(res, 200, await runProfileTest(profile, input, context.providers, `使用草稿配置: ${profile.name}`));
     return;
   }
 
@@ -476,6 +426,73 @@ async function handleRequest(
   }
 
   throw new HttpError(404, "not_found", "路由不存在");
+}
+
+async function runProfileTest(
+  profile: ProxyProfile,
+  sample: Record<string, unknown>,
+  providers: ProviderRegistry,
+  profileMessage: string
+): Promise<{ ok: boolean; stages: Array<{ id: string; status: string; message?: string; duration?: number }>; preview?: string }> {
+  const stages: Array<{ id: string; status: string; message?: string; duration?: number }> = [];
+  stages.push({ id: "profile_matched", status: "ok", message: profileMessage });
+
+  const sampleData = typeof sample.sample === "object" && sample.sample !== null
+    ? sample.sample as Record<string, unknown>
+    : {};
+  const sampleHeaders = typeof sampleData.headers === "object" && sampleData.headers !== null
+    ? sampleData.headers as Record<string, string>
+    : { "content-type": "application/json" };
+  const sampleBody = sampleData.body ?? { messages: [{ role: "user", content: "ping" }] };
+
+  const parameters: RequestParameters = {
+    page: { url: null, origin: null, source: "unknown" },
+    target: { origin: profile.targetOrigin, path: profile.targetPath },
+    request: {
+      method: "POST",
+      query: {},
+      headers: sampleHeaders,
+      body: sampleBody
+    }
+  };
+
+  stages.push({ id: "request_parsed", status: "ok" });
+
+  const promptOptions = {
+    contextRegex: profile.contextRegex,
+    contextRegexFlags: profile.contextRegexFlags,
+    conversationHistory: [] as ConversationTurn[]
+  };
+  const prompt = composePrompt(parameters, profile.prompt, promptOptions);
+
+  stages.push({ id: "prompt_composed", status: "ok", message: `提示词长度: ${prompt.length} 字符` });
+
+  const provider = providers[profile.provider] as AiProviderAdapter | undefined;
+  if (!provider) {
+    stages.push({ id: "provider_done", status: "error", message: `未找到 provider: ${profile.provider}` });
+    return { ok: false, stages };
+  }
+
+  try {
+    stages.push({ id: "provider_start", status: "ok", message: `调用 ${profile.provider}` });
+    const startTime = Date.now();
+    const content = await provider.generateText(profile, prompt);
+    const duration = Date.now() - startTime;
+    stages.push({
+      id: "provider_done",
+      status: "ok",
+      message: `输出 ${content.length} 字符`,
+      duration
+    });
+    return { ok: true, stages, preview: content.slice(0, 500) };
+  } catch (error) {
+    stages.push({
+      id: "provider_done",
+      status: "error",
+      message: error instanceof Error ? error.message : "未知错误"
+    });
+    return { ok: false, stages };
+  }
 }
 
 function loadProfiles(profilesPath: string): Map<string, ProxyProfile> {

@@ -20,25 +20,30 @@ export function ResponseTemplatePicker({ draft, onSelect, onInferFromSample }: R
   return (
     <section className="template-picker">
       <strong>返回格式模板</strong>
-      <p className="muted">选择预设模板快速配置返回格式。选择后可在专家配置中进一步自定义。</p>
+      <p className="muted">默认按返回类型推荐模板，详情和样例可展开查看。</p>
       <div className="template-grid">
         {BUILTIN_RESPONSE_TEMPLATES.map((template) => (
-          <button
+          <article
             key={template.id}
-            type="button"
             className={`template-card ${draft.responseTemplateId === template.id ? "selected" : ""}`}
-            onClick={() => onSelect(template.id)}
           >
             <div className="template-card-header">
               <strong>{template.name}</strong>
               <span className="template-mode">{template.responseMode}</span>
             </div>
             <p className="template-desc">{template.description}</p>
+            <button
+              type="button"
+              className="secondary compact"
+              onClick={() => onSelect(template.id)}
+            >
+              {draft.responseTemplateId === template.id ? "已选择" : "选择"}
+            </button>
             <details className="template-preview">
-              <summary>示例预览</summary>
+              <summary>详情和示例</summary>
               <pre>{template.examplePreview}</pre>
             </details>
-          </button>
+          </article>
         ))}
       </div>
 

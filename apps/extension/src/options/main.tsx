@@ -5,7 +5,8 @@ import {
   parseConfigImport,
   type AppConfig,
   type ConfigExportMode,
-  type ProxyProfile
+  type ProxyProfile,
+  type RequestDiagnosticSummary
 } from "@proxy2localai/shared";
 import { applyDynamicRules } from "../lib/dnr";
 import { getBridgeDoctor, getBridgeHealth, testBridgeProvider, type BridgeDoctorReport, type BridgeHealth } from "../lib/bridgeApi";
@@ -25,6 +26,7 @@ import { ProfileList } from "./components/ProfileList";
 import { ProfileEditor } from "./components/ProfileEditor";
 import { CreateProxyWizard } from "./components/CreateProxyWizard";
 import { RecentRequestsPanel } from "./components/RecentRequestsPanel";
+import { buildDashboardStatus } from "./dashboardView";
 import "../ui.css";
 
 function OptionsApp() {
@@ -40,6 +42,9 @@ function OptionsApp() {
   const [pathDialogOpen, setPathDialogOpen] = useState(false);
   const [pathDraft, setPathDraft] = useState("");
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [bridgeSettingsOpen, setBridgeSettingsOpen] = useState(false);
+  const [configToolsOpen, setConfigToolsOpen] = useState(false);
+  const [recentDiagnostics, setRecentDiagnostics] = useState<RequestDiagnosticSummary[]>([]);
   const [providerTestResult, setProviderTestResult] = useState<{ ok: boolean; output?: string | null; error?: string } | null>(null);
 
   const load = useCallback(async () => {
@@ -63,7 +68,30 @@ function OptionsApp() {
     void load().catch((error) => setStatus(error instanceof Error ? error.message : "加载失败"));
   }, [load]);
 
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      if (pathDialogOpen) {
+        setPathDialogOpen(false);
+      } else if (bridgeSettingsOpen) {
+        setBridgeSettingsOpen(false);
+      } else if (configToolsOpen) {
+        setConfigToolsOpen(false);
+      } else if (wizardOpen) {
+        setWizardOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [bridgeSettingsOpen, configToolsOpen, pathDialogOpen, wizardOpen]);
+
   const selectedProfile = config?.profiles.find((profile) => profile.id === selectedId);
+  const dashboardStatus = useMemo(
+    () => config ? buildDashboardStatus(config, health, recentDiagnostics) : null,
+    [config, health, recentDiagnostics]
+  );
 
   const persistConfig = useCallback(async (nextConfig: AppConfig, sync = true) => {
     const saved = await storage.save(nextConfig);
@@ -78,9 +106,11 @@ function OptionsApp() {
     return saved;
   }, [storage]);
 
-  const wizardComplete = useCallback(async (nextConfig: AppConfig) => {
+  const wizardComplete = useCallback(async (nextConfig: AppConfig, options?: { keepOpen?: boolean }) => {
     const saved = await persistConfig(nextConfig);
-    setWizardOpen(false);
+    if (!options?.keepOpen) {
+      setWizardOpen(false);
+    }
     const firstProfile = saved.profiles[saved.profiles.length - 1];
     if (firstProfile) {
       setSelectedId(firstProfile.id);
@@ -286,76 +316,108 @@ function OptionsApp() {
 
   return (
     <main className="shell">
-      <BridgeStatusBar
-        status={status}
-        health={health}
-        doctorReport={doctorReport}
-        onTestBridge={() => void testBridge()}
-        onRunDoctor={() => void runDoctor().catch((error) => setStatus(error instanceof Error ? error.message : "Bridge 自检失败"))}
-        onSync={() => void syncNow()}
-      />
-
-      <section className="bridge-row">
-        <label>
-          Bridge 地址
-          <input
-            value={config.bridgeBaseUrl}
-            onChange={(event) => setConfig({ ...config, bridgeBaseUrl: event.target.value })}
-          />
-        </label>
-        <label>
-          本地 Token
-          <input
-            value={config.token}
-            onChange={(event) => setConfig({ ...config, token: event.target.value })}
-          />
-        </label>
-        <button type="button" onClick={() => void saveBridge()}>保存 Bridge</button>
-      </section>
-
-      <section className="tool-row">
-        <div>
-          <strong>配置文件</strong>
-          <p>用于备份、迁移到另一台电脑，或把规则模板分享给其他人。</p>
-        </div>
-        <div className="actions">
-          <input
-            ref={importInputRef}
-            className="visually-hidden"
-            type="file"
-            accept="application/json,.json"
-            onChange={(event) => void importConfigFile(event)}
-          />
-          <button type="button" className="secondary" onClick={() => importInputRef.current?.click()}>导入配置</button>
-          <button type="button" className="secondary" onClick={() => downloadConfig("backup")}>导出备份</button>
-          <button type="button" className="secondary" onClick={() => downloadConfig("template")}>导出模板</button>
-        </div>
-      </section>
-
-      <RecentRequestsPanel config={config} setStatus={setStatus} />
-
-      <section className="layout">
-        <ProfileList
-          profiles={config.profiles}
-          selectedId={selectedId}
-          onSelect={selectProfile}
-          onAdd={addProfile}
-          onToggleEnabled={(profile) => void toggleProfileEnabled(profile).catch((error) => setStatus(error instanceof Error ? error.message : "切换失败"))}
+      {dashboardStatus && (
+        <BridgeStatusBar
+          status={status}
+          dashboard={dashboardStatus}
+          doctorReport={doctorReport}
+          onTestBridge={() => void testBridge()}
+          onRunDoctor={() => void runDoctor().catch((error) => setStatus(error instanceof Error ? error.message : "Bridge 自检失败"))}
+          onSync={() => void syncNow()}
+          onOpenBridgeSettings={() => setBridgeSettingsOpen(true)}
+          onOpenConfigTools={() => setConfigToolsOpen(true)}
         />
-        <ProfileEditor
-          draft={draft}
-          curlText={curlText}
-          selectedProfile={selectedProfile ?? null}
-          onChangeDraft={updateDraft}
-          onChangeCurlText={setCurlText}
-          onFillFromCurl={fillFromCurl}
-          onOpenPathDialog={openPathDialog}
-          onSave={() => void saveProfile().catch((error) => setStatus(error instanceof Error ? error.message : "保存失败"))}
-          onDelete={() => void deleteProfile()}
-          onTestProvider={() => void testProvider()}
-          testResult={providerTestResult}
-        />
+      )}
+
+      {config.profiles.length === 0 && !wizardOpen && (
+        <section className="empty-state">
+          <strong>创建第一个本地 AI 代理</strong>
+          <p>推荐从复制线上 API 的 cURL 开始，按“检查 Bridge → 粘贴 cURL → 选择 AI → 测试 → 保存”完成闭环。</p>
+          <button type="button" onClick={() => setWizardOpen(true)}>创建代理</button>
+        </section>
+      )}
+
+      <section className="console-layout">
+          <ProfileList
+            profiles={config.profiles}
+            selectedId={selectedId}
+            onSelect={selectProfile}
+            onAdd={addProfile}
+            onToggleEnabled={(profile) => void toggleProfileEnabled(profile).catch((error) => setStatus(error instanceof Error ? error.message : "切换失败"))}
+          />
+          <ProfileEditor
+            draft={draft}
+            curlText={curlText}
+            selectedProfile={selectedProfile ?? null}
+            onChangeDraft={updateDraft}
+            onChangeCurlText={setCurlText}
+            onFillFromCurl={fillFromCurl}
+            onOpenPathDialog={openPathDialog}
+            onSave={() => void saveProfile().catch((error) => setStatus(error instanceof Error ? error.message : "保存失败"))}
+            onDelete={() => void deleteProfile()}
+            onTestProvider={() => void testProvider()}
+            testResult={providerTestResult}
+          />
+          <RecentRequestsPanel
+            config={config}
+            setStatus={setStatus}
+            onItemsChange={setRecentDiagnostics}
+          />
       </section>
+
+      {bridgeSettingsOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setBridgeSettingsOpen(false)}>
+          <section className="modal" role="dialog" aria-modal="true" aria-label="Bridge 设置" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-title">
+              <h2>Bridge 设置</h2>
+              <button type="button" className="icon-button secondary" aria-label="关闭 Bridge 设置" onClick={() => setBridgeSettingsOpen(false)}>×</button>
+            </div>
+            <label>
+              Bridge 地址
+              <input
+                value={config.bridgeBaseUrl}
+                onChange={(event) => setConfig({ ...config, bridgeBaseUrl: event.target.value })}
+              />
+            </label>
+            <label>
+              本地 Token
+              <input
+                value={config.token}
+                onChange={(event) => setConfig({ ...config, token: event.target.value })}
+              />
+            </label>
+            <p className="risk-note">本地 Token 会用于扩展和 Bridge 通信；导出分享模板时不应包含真实 Token。</p>
+            <div className="actions">
+              <button type="button" onClick={() => void saveBridge().then(() => setBridgeSettingsOpen(false))}>保存 Bridge</button>
+              <button type="button" className="secondary" onClick={() => setBridgeSettingsOpen(false)}>取消</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {configToolsOpen && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setConfigToolsOpen(false)}>
+          <section className="modal" role="dialog" aria-modal="true" aria-label="配置导入导出" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-title">
+              <h2>配置导入导出</h2>
+              <button type="button" className="icon-button secondary" aria-label="关闭导入导出" onClick={() => setConfigToolsOpen(false)}>×</button>
+            </div>
+            <p>用于备份、迁移到另一台电脑，或把规则模板分享给其他人。导入配置可能包含本地路径、命令参数和代理规则，请只导入可信文件。</p>
+            <input
+              ref={importInputRef}
+              className="visually-hidden"
+              type="file"
+              accept="application/json,.json"
+              onChange={(event) => void importConfigFile(event)}
+            />
+            <div className="actions">
+              <button type="button" className="secondary" onClick={() => importInputRef.current?.click()}>导入配置</button>
+              <button type="button" className="secondary" onClick={() => downloadConfig("backup")}>导出备份</button>
+              <button type="button" className="secondary" onClick={() => downloadConfig("template")}>导出模板</button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {pathDialogOpen && (
         <div className="modal-backdrop" role="presentation">
@@ -382,7 +444,7 @@ function OptionsApp() {
       {wizardOpen && config && (
         <CreateProxyWizard
           config={config}
-          onComplete={(nextConfig) => void wizardComplete(nextConfig)}
+          onComplete={(nextConfig, options) => wizardComplete(nextConfig, options)}
           onCancel={() => setWizardOpen(false)}
           setStatus={setStatus}
         />

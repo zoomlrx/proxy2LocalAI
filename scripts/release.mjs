@@ -33,6 +33,15 @@ rmSync(bridgeZip, { force: true });
 mkdirSync(resolve(bridgeTmp, "dist"), { recursive: true });
 
 cpSync(bridgeDist, resolve(bridgeTmp, "dist"), { recursive: true });
+writeFileSync(resolve(bridgeTmp, "package.json"), JSON.stringify({
+  name: "proxy2localai-bridge",
+  version,
+  type: "module",
+  private: true,
+  bin: {
+    "proxy2localai-bridge": "./dist/index.js"
+  }
+}, null, 2));
 cpSync(resolve(root, "scripts/start-bridge.cmd"), resolve(bridgeTmp, "start.cmd"));
 cpSync(resolve(root, "scripts/start-bridge.ps1"), resolve(bridgeTmp, "start.ps1"));
 cpSync(resolve(root, "scripts/start-bridge.sh"), resolve(bridgeTmp, "start.sh"));

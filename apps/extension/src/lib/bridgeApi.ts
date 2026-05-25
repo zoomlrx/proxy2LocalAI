@@ -1,4 +1,4 @@
-import type { AppConfig, RequestDiagnosticDetail, RequestDiagnosticSummary } from "@proxy2localai/shared";
+import type { AppConfig, ProxyProfile, RequestDiagnosticDetail, RequestDiagnosticSummary } from "@proxy2localai/shared";
 
 export interface BridgeHealth {
   ok: boolean;
@@ -89,6 +89,29 @@ export async function testBridgeProfile(
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`测试代理失败: ${response.status} ${text}`);
+  }
+  return response.json() as Promise<TestProfileResult>;
+}
+
+export async function testBridgeProfileDraft(
+  config: AppConfig,
+  profile: ProxyProfile,
+  sample: TestProfileSample = {}
+): Promise<TestProfileResult> {
+  const response = await fetch(
+    new URL("/admin/test-profile-draft", config.bridgeBaseUrl),
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-proxy2localai-token": config.token
+      },
+      body: JSON.stringify({ profile, sample })
+    }
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`测试草稿代理失败: ${response.status} ${text}`);
   }
   return response.json() as Promise<TestProfileResult>;
 }

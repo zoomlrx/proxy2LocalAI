@@ -146,7 +146,51 @@ export function upsertProfile(config: AppConfig, profile: ProxyProfile): AppConf
 export type ProfileSection = "basic" | "advanced" | "expert";
 
 export function getDefaultExpandedSections(setupMode: SetupMode): ProfileSection[] {
-  return setupMode === "wizard" ? ["basic"] : ["basic", "advanced"];
+  return setupMode === "wizard" ? ["basic"] : ["basic"];
+}
+
+export interface CurlSummary {
+  origin: string;
+  path: string;
+  method: HttpMethod;
+  bodySummary: string;
+  stream: boolean;
+}
+
+function summarizeBody(body: string | undefined): { bodySummary: string; stream: boolean } {
+  if (!body) {
+    return { bodySummary: "无请求体", stream: false };
+  }
+  try {
+    const parsed = JSON.parse(body) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const record = parsed as Record<string, unknown>;
+      return {
+        bodySummary: Object.keys(record).slice(0, 8).join(", ") || "空 JSON 对象",
+        stream: record.stream === true
+      };
+    }
+  } catch {
+    // 非 JSON 请求体只做安全摘要。
+  }
+  const compact = body.replace(/\s+/g, " ").trim();
+  return {
+    bodySummary: compact.length > 120 ? `${compact.slice(0, 120)}...` : compact,
+    stream: /"stream"\s*:\s*true/.test(body)
+  };
+}
+
+export function summarizeCurlCommand(curlCommand: string): CurlSummary {
+  const parsed = parseCurlCommand(curlCommand);
+  const url = new URL(parsed.url);
+  const body = summarizeBody(parsed.body);
+  return {
+    origin: url.origin,
+    path: url.pathname || "/",
+    method: parsed.method,
+    bodySummary: body.bodySummary,
+    stream: body.stream
+  };
 }
 
 export function applyCurlToDraft(draft: ProfileDraft, curlCommand: string): ProfileDraft {
@@ -172,6 +216,27 @@ export function createWizardProfileFromCurl(curlCommand: string, projectDir: str
     responseMode: "stream",
     responseTemplateId: "openai_sse"
   };
+}
+
+export function getRecommendedTemplateId(responseMode: ResponseMode): string {
+  switch (responseMode) {
+    case "stream":
+      return "openai_sse";
+    case "mapped_sse":
+      return "generic_sse";
+    case "custom_json":
+      return "business_code_data_message";
+    case "block":
+    default:
+      return "openai_chat_json";
+  }
+}
+
+export function applyResponseModeToDraft(draft: ProfileDraft, responseMode: ResponseMode): ProfileDraft {
+  return applyTemplateToDraft({
+    ...draft,
+    responseMode
+  }, getRecommendedTemplateId(responseMode));
 }
 
 export function applyTemplateToDraft(draft: ProfileDraft, templateId: string): ProfileDraft {

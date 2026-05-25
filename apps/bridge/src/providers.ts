@@ -316,7 +316,7 @@ export function createProviderCommand(
 ): CommandSpec {
   const allowDangerousCli = options.allowDangerousCli ?? (profile.allowDangerousCli || isDangerousCliAllowed());
   if (profile.provider === "claude") {
-    const providerArgs = profile.providerArgs ?? [];
+    const providerArgs = allowDangerousCli ? profile.providerArgs ?? [] : [];
     const args = [
       "-p",
       "--output-format",
@@ -345,7 +345,7 @@ export function createProviderCommand(
       "-C",
       profile.projectDir
     ];
-    const mergedArgs = appendArgs(args, profile.providerArgs, ["--full-auto"]);
+    const mergedArgs = appendArgs(args, allowDangerousCli ? profile.providerArgs : undefined, ["--full-auto"]);
     mergedArgs.push("-");
     return {
       command: "codex",

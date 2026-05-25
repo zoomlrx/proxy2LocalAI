@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from "react";
 import { inferResponseTemplateFromSample, type HttpMethod } from "@proxy2localai/shared";
 import type { ProfileDraft, ProfileSection } from "../profileForm";
-import { applyTemplateToDraft, getDefaultExpandedSections } from "../profileForm";
+import { applyResponseModeToDraft, applyTemplateToDraft, getDefaultExpandedSections } from "../profileForm";
 import { ResponseTemplatePicker } from "./ResponseTemplatePicker";
 
 const METHODS: HttpMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
@@ -83,6 +83,15 @@ export function ProfileEditor({
     }
   }, [draft, onChangeDraft]);
 
+  const handleResponseModeChange = useCallback((responseMode: ProfileDraft["responseMode"]) => {
+    const next = applyResponseModeToDraft(draft, responseMode);
+    for (const key of Object.keys(next) as Array<keyof ProfileDraft>) {
+      if (next[key] !== draft[key]) {
+        onChangeDraft(key, next[key]);
+      }
+    }
+  }, [draft, onChangeDraft]);
+
   return (
     <form className="editor" onSubmit={(event) => {
       event.preventDefault();
@@ -105,8 +114,14 @@ export function ProfileEditor({
       {isExpanded("basic") && (
         <section className="config-section basic">
           <div className="grid two">
-            <label>配置 ID<input value={draft.id} onChange={(e) => onChangeDraft("id", e.target.value)} /></label>
             <label>名称<input value={draft.name} onChange={(e) => onChangeDraft("name", e.target.value)} /></label>
+            <label>AI Provider
+              <select value={draft.provider} onChange={(e) => onChangeDraft("provider", e.target.value as ProfileDraft["provider"])}>
+                <option value="claude">Claude Code</option>
+                <option value="codex">Codex</option>
+                <option value="custom">Custom</option>
+              </select>
+            </label>
           </div>
           <label className="check">
             <input type="checkbox" checked={draft.enabled} onChange={(e) => onChangeDraft("enabled", e.target.checked)} />
@@ -128,29 +143,25 @@ export function ProfileEditor({
             </div>
           </fieldset>
           <div className="grid two">
-            <label>AI Provider
-              <select value={draft.provider} onChange={(e) => onChangeDraft("provider", e.target.value as ProfileDraft["provider"])}>
-                <option value="claude">Claude Code</option>
-                <option value="codex">Codex</option>
-                <option value="custom">Custom</option>
-              </select>
-            </label>
             <label>返回类型
-              <select value={draft.responseMode} onChange={(e) => onChangeDraft("responseMode", e.target.value as ProfileDraft["responseMode"])}>
+              <select value={draft.responseMode} onChange={(e) => handleResponseModeChange(e.target.value as ProfileDraft["responseMode"])}>
                 <option value="block">普通 JSON</option>
                 <option value="stream">流式 SSE</option>
                 <option value="custom_json">自定义 JSON</option>
                 <option value="mapped_sse">映射 SSE</option>
               </select>
             </label>
+            <label>本地 AI 配置项目路径
+              <input readOnly value={draft.projectDir} placeholder="点击选择或粘贴本地绝对路径" onClick={onOpenPathDialog} onFocus={onOpenPathDialog} />
+            </label>
           </div>
-          <ResponseTemplatePicker draft={draft} onSelect={handleTemplateSelect} onInferFromSample={handleInferFromSample} />
-          <label>本地 AI 配置项目路径
-            <input readOnly value={draft.projectDir} placeholder="点击选择或粘贴本地绝对路径" onClick={onOpenPathDialog} onFocus={onOpenPathDialog} />
-          </label>
           <label>提示词
             <textarea value={draft.prompt} onChange={(e) => onChangeDraft("prompt", e.target.value)} />
           </label>
+          <details className="inline-details">
+            <summary>返回模板</summary>
+            <ResponseTemplatePicker draft={draft} onSelect={handleTemplateSelect} onInferFromSample={handleInferFromSample} />
+          </details>
         </section>
       )}
 
@@ -159,10 +170,6 @@ export function ProfileEditor({
       {isExpanded("advanced") && (
         <section className="config-section advanced">
           <div className="grid two">
-            <label className="check">
-              <input type="checkbox" checked={draft.allowDangerousCli} onChange={(e) => onChangeDraft("allowDangerousCli", e.target.checked)} />
-              最高权限执行本机 CLI
-            </label>
             <label className="check">
               <input type="checkbox" checked={draft.enableConversationMemory} onChange={(e) => onChangeDraft("enableConversationMemory", e.target.checked)} />
               启用多轮上下文记忆
@@ -193,11 +200,27 @@ export function ProfileEditor({
       <SectionToggle title="专家配置" expanded={isExpanded("expert")} onToggle={() => toggleSection("expert")} />
       {isExpanded("expert") && (
         <section className="config-section expert">
+          <p className="risk-note">专家配置可能执行本地命令、改变响应协议或暴露本地路径。只在明确知道目标接口需要时修改。</p>
+          <div className="grid two">
+            <label>配置 ID<input value={draft.id} onChange={(e) => onChangeDraft("id", e.target.value)} /></label>
+            <label className="check">
+              <input type="checkbox" checked={draft.allowDangerousCli} onChange={(e) => onChangeDraft("allowDangerousCli", e.target.checked)} />
+              允许高风险 CLI 参数
+            </label>
+          </div>
+          {draft.provider !== "custom" && draft.allowDangerousCli && (
+            <p className="risk-note">已允许高风险 CLI 参数，请确认追加参数不会越权访问本机文件或执行非预期命令。</p>
+          )}
           {draft.provider !== "custom" && (
             <section className="custom-json-panel">
               <label>AI 工具追加参数
-                <textarea value={draft.providerArgs} placeholder="--dangerously-skip-permissions" onChange={(e) => onChangeDraft("providerArgs", e.target.value)} />
-                <small>每行一个参数，会追加到 {draft.provider === "claude" ? "Claude Code" : "Codex"} 默认命令后。</small>
+                <textarea
+                  value={draft.providerArgs}
+                  disabled={!draft.allowDangerousCli}
+                  placeholder="--debug"
+                  onChange={(e) => onChangeDraft("providerArgs", e.target.value)}
+                />
+                <small>每行一个参数。该字段仅在“允许高风险 CLI 参数”开启时生效。</small>
               </label>
             </section>
           )}
@@ -234,14 +257,6 @@ export function ProfileEditor({
         </section>
       )}
 
-      {selectedProfile && onTestProvider && (
-        <div className="test-actions">
-          <button type="button" className="secondary" onClick={onTestProvider} title="发送最小 prompt 测试 provider 是否能工作（消耗模型额度）">
-            实际测试
-          </button>
-          <small className="muted">实际测试会消耗模型额度</small>
-        </div>
-      )}
       {testResult && (
         <div className={`test-result ${testResult.ok ? "ok" : "error"}`}>
           <strong>{testResult.ok ? "测试通过" : "测试失败"}</strong>
@@ -257,12 +272,25 @@ export function ProfileEditor({
         </div>
       )}
 
-      <div className="actions">
+      <div className="actions editor-actions">
         <button type="submit">保存配置</button>
-        <button type="button" className="danger" disabled={!selectedProfile} onClick={onDelete}>
-          删除
-        </button>
+        {selectedProfile && onTestProvider && (
+          <button type="button" className="secondary" onClick={onTestProvider} title="发送最小 prompt 测试 provider 是否能工作（消耗模型额度）">
+            测试 Provider
+          </button>
+        )}
       </div>
+
+      <section className="danger-zone">
+        <div>
+          <strong>危险操作</strong>
+          <p>删除后需要重新创建 Profile 才能恢复代理。</p>
+        </div>
+        <button type="button" className="danger" disabled={!selectedProfile} onClick={onDelete}>删除配置</button>
+      </section>
+      {selectedProfile && onTestProvider && (
+        <small className="muted">测试 Provider 会发送最小 prompt，可能消耗模型额度。</small>
+      )}
     </form>
   );
 }
