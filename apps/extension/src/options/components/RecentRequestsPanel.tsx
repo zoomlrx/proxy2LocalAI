@@ -1,12 +1,26 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { Copy, RefreshCw, RotateCcw } from "lucide-react";
 import type { AppConfig, RequestDiagnosticDetail, RequestDiagnosticSummary } from "@proxy2localai/shared";
 import { exportDiagnostic, getDiagnosticDetail, getRecentDiagnostics, testBridgeProfile } from "../../lib/bridgeApi";
 import { formatDurationForDisplay, getDiagnosticStageLabel } from "../dashboardView";
+import { Button, ModalShell, Panel, Pill, StatusDot, cx } from "../../ui/components";
 
 interface RecentRequestsPanelProps {
   config: AppConfig;
   setStatus: (status: string) => void;
   onItemsChange?: (items: RequestDiagnosticSummary[]) => void;
+}
+
+function formatTime(iso: string) {
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
+}
+
+function getStatusTone(status: RequestDiagnosticSummary["finalStatus"]) {
+  return status === "error" ? "danger" as const : status === "ok" ? "success" as const : "warning" as const;
 }
 
 export function RecentRequestsPanel({ config, setStatus, onItemsChange }: RecentRequestsPanelProps) {
@@ -69,60 +83,59 @@ export function RecentRequestsPanel({ config, setStatus, onItemsChange }: Recent
     }
   }, [config, refresh, setStatus]);
 
-  const formatTime = (iso: string) => {
-    try {
-      return new Date(iso).toLocaleString();
-    } catch {
-      return iso;
-    }
-  };
-
   return (
-    <section className="diagnostics-panel">
-      <div className="diagnostics-header">
-        <div>
-          <strong>最近请求诊断台</strong>
-          <p className="muted">定位 DNR、Bridge、Profile、Provider 和响应转换阶段。</p>
+    <Panel className="grid gap-4 lg:sticky lg:top-5">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+        <div className="min-w-0">
+          <h2 className="text-base font-bold text-console-strong">最近请求诊断台</h2>
+          <p className="mt-1 text-sm leading-6 text-console-subtle">定位 DNR、Bridge、Profile、Provider 和响应转换阶段。</p>
         </div>
-        <button type="button" className="secondary" onClick={() => void refresh()} disabled={loading}>
+        <Button type="button" variant="secondary" size="sm" icon={<RefreshCw size={14} aria-hidden="true" />} onClick={() => void refresh()} disabled={loading}>
           {loading ? "加载中" : "刷新"}
-        </button>
+        </Button>
       </div>
 
       {items.length === 0 && !loading && (
-        <p className="muted">暂无请求记录。发起代理请求后将在此显示。</p>
+        <div className="rounded-console border border-dashed border-console-border-strong bg-console-muted p-4">
+          <strong className="text-sm text-console-strong">暂无请求记录</strong>
+          <p className="mt-1 text-sm leading-6 text-console-subtle">发起代理请求后将在此显示；刷新失败时旧统计会被清空。</p>
+        </div>
       )}
 
       {items.length > 0 && (
-        <div className="diagnostics-table-wrap">
-          <table className="diagnostics-table">
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-left text-xs">
             <thead>
-              <tr>
-                <th>时间</th>
-                <th>方法</th>
-                <th>目标接口</th>
-                <th>Profile</th>
-                <th>状态</th>
-                <th>耗时</th>
-                <th>失败阶段</th>
-                <th>操作</th>
+              <tr className="border-b border-console-border font-bold text-console-subtle">
+                <th className="py-3 pr-3">时间</th>
+                <th className="py-3 pr-3">方法</th>
+                <th className="min-w-48 py-3 pr-3">目标接口</th>
+                <th className="py-3 pr-3">Profile</th>
+                <th className="py-3 pr-3">状态</th>
+                <th className="py-3 pr-3">耗时</th>
+                <th className="py-3 pr-3">失败阶段</th>
+                <th className="py-3 text-right">操作</th>
               </tr>
             </thead>
             <tbody>
               {items.map((item) => (
-                <tr key={item.id} className={item.finalStatus}>
-                  <td title={formatTime(item.startedAt)}>{formatTime(item.startedAt)}</td>
-                  <td><span className="diagnostic-method">{item.method}</span></td>
-                  <td><span className="truncate-text" title={item.targetUrl}>{item.targetUrl}</span></td>
-                  <td>{item.profileId ?? "-"}</td>
-                  <td><span className={`diagnostic-status ${item.finalStatus}`}>{item.finalStatus}</span></td>
-                  <td>{formatDurationForDisplay(item.duration)}</td>
-                  <td>{getDiagnosticStageLabel(item.errorStage)}</td>
-                  <td>
-                    <div className="table-actions">
-                      <button type="button" className="secondary compact" onClick={() => void viewDetail(item.id)}>详情</button>
-                      <button type="button" className="secondary compact" onClick={() => void copyDiagnostic(item.id)}>复制诊断</button>
-                      <button type="button" className="secondary compact" onClick={() => void retryProfileTest(item.profileId)} disabled={!item.profileId}>重试</button>
+                <tr key={item.id} className={cx("border-b border-console-border align-middle last:border-b-0", item.finalStatus === "error" && "bg-console-danger-soft/55")}>
+                  <td className="max-w-36 truncate py-3 pr-3" title={formatTime(item.startedAt)}>{formatTime(item.startedAt)}</td>
+                  <td className="py-3 pr-3"><span className="rounded bg-[#edf1f4] px-1.5 py-1 font-mono font-bold text-[#25333b]">{item.method}</span></td>
+                  <td className="py-3 pr-3"><span className="block max-w-72 truncate" title={item.targetUrl}>{item.targetUrl}</span></td>
+                  <td className="max-w-28 truncate py-3 pr-3">{item.profileId ?? "-"}</td>
+                  <td className="py-3 pr-3"><Pill tone={getStatusTone(item.finalStatus)}>{item.finalStatus}</Pill></td>
+                  <td className="py-3 pr-3">{formatDurationForDisplay(item.duration)}</td>
+                  <td className="py-3 pr-3">{getDiagnosticStageLabel(item.errorStage)}</td>
+                  <td className="py-3">
+                    <div className="flex justify-end gap-1.5">
+                      <Button type="button" variant="secondary" size="sm" onClick={() => void viewDetail(item.id)}>详情</Button>
+                      <Button type="button" variant="secondary" size="icon" aria-label="复制诊断" onClick={() => void copyDiagnostic(item.id)}>
+                        <Copy size={14} aria-hidden="true" />
+                      </Button>
+                      <Button type="button" variant="secondary" size="icon" aria-label="重试测试" onClick={() => void retryProfileTest(item.profileId)} disabled={!item.profileId}>
+                        <RotateCcw size={14} aria-hidden="true" />
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -133,42 +146,47 @@ export function RecentRequestsPanel({ config, setStatus, onItemsChange }: Recent
       )}
 
       {detail && (
-        <div className="modal-backdrop" role="presentation" onClick={() => setDetail(null)}>
-          <section className="modal diagnostic-detail" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-            <h3>请求详情</h3>
-            <dl className="diagnostic-meta">
-              <div><dt>请求 ID</dt><dd>{detail.summary.id}</dd></div>
-              <div><dt>方法</dt><dd>{detail.summary.method}</dd></div>
-              <div><dt>原始目标 URL</dt><dd className="break-text">{detail.summary.targetUrl}</dd></div>
-              <div><dt>Bridge URL</dt><dd className="break-text">{detail.summary.profileId ? `${config.bridgeBaseUrl.replace(/\/$/, "")}/proxy/${encodeURIComponent(detail.summary.profileId)}` : "-"}</dd></div>
-              <div><dt>Profile</dt><dd>{detail.summary.profileId ?? "-"}</dd></div>
-              <div><dt>响应模式</dt><dd>{config.profiles.find((profile) => profile.id === detail.summary.profileId)?.responseMode ?? "-"}</dd></div>
-              <div><dt>状态</dt><dd>{detail.summary.finalStatus}</dd></div>
-              <div><dt>耗时</dt><dd>{formatDurationForDisplay(detail.summary.duration)}</dd></div>
+        <ModalShell title="请求详情" className="max-w-3xl" onClose={() => setDetail(null)} closeLabel="关闭请求详情">
+          <div className="grid gap-4">
+            <dl className="grid gap-2 text-sm">
+              <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-2"><dt className="font-semibold text-console-subtle">请求 ID</dt><dd className="break-anywhere">{detail.summary.id}</dd></div>
+              <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-2"><dt className="font-semibold text-console-subtle">方法</dt><dd>{detail.summary.method}</dd></div>
+              <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-2"><dt className="font-semibold text-console-subtle">原始目标 URL</dt><dd className="break-anywhere">{detail.summary.targetUrl}</dd></div>
+              <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-2"><dt className="font-semibold text-console-subtle">Bridge URL</dt><dd className="break-anywhere">{detail.summary.profileId ? `${config.bridgeBaseUrl.replace(/\/$/, "")}/proxy/${encodeURIComponent(detail.summary.profileId)}` : "-"}</dd></div>
+              <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-2"><dt className="font-semibold text-console-subtle">Profile</dt><dd>{detail.summary.profileId ?? "-"}</dd></div>
+              <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-2"><dt className="font-semibold text-console-subtle">响应模式</dt><dd>{config.profiles.find((profile) => profile.id === detail.summary.profileId)?.responseMode ?? "-"}</dd></div>
+              <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-2"><dt className="font-semibold text-console-subtle">状态</dt><dd><Pill tone={getStatusTone(detail.summary.finalStatus)}>{detail.summary.finalStatus}</Pill></dd></div>
+              <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-2"><dt className="font-semibold text-console-subtle">耗时</dt><dd>{formatDurationForDisplay(detail.summary.duration)}</dd></div>
               {detail.summary.errorStage && (
-                <div><dt>失败阶段</dt><dd>{getDiagnosticStageLabel(detail.summary.errorStage)}（{detail.summary.errorStage}）</dd></div>
+                <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-2"><dt className="font-semibold text-console-subtle">失败阶段</dt><dd>{getDiagnosticStageLabel(detail.summary.errorStage)}（{detail.summary.errorStage}）</dd></div>
               )}
             </dl>
 
-            <h4>阶段记录</h4>
-            <ul className="stage-list">
-              {detail.stages.map((stage, index) => (
-                <li key={index} className={`stage-item ${stage.status}`}>
-                  <span className="stage-id">{stage.id}</span>
-                  <span className={`stage-status ${stage.status}`}>{stage.status}</span>
-                  {stage.message && <small className="stage-message">{stage.message}</small>}
-                  {stage.duration !== undefined && <small className="stage-duration">{formatDurationForDisplay(stage.duration)}</small>}
-                </li>
-              ))}
-            </ul>
+            <section className="grid gap-2">
+              <h3 className="text-sm font-bold text-console-strong">阶段记录</h3>
+              <ul className="grid gap-2 p-0">
+                {detail.stages.map((stage, index) => (
+                  <li key={index} className="grid grid-cols-[10px_minmax(0,1fr)_auto] gap-2 rounded-console border border-console-border bg-console-muted p-2">
+                    <StatusDot tone={stage.status === "error" ? "danger" : stage.status === "ok" ? "success" : "warning"} className="mt-1" />
+                    <div className="min-w-0">
+                      <span className="block truncate font-mono text-xs font-bold text-console-text">{stage.id}</span>
+                      {stage.message && <small className="block break-anywhere text-xs leading-5 text-console-subtle">{stage.message}</small>}
+                    </div>
+                    <span className="text-xs text-console-subtle">{formatDurationForDisplay(stage.duration)}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
 
-            <div className="actions">
-              <button type="button" onClick={() => void copyDiagnostic(detail.summary.id)}>复制诊断信息</button>
-              <button type="button" className="secondary" onClick={() => setDetail(null)}>关闭</button>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" icon={<Copy size={16} aria-hidden="true" />} onClick={() => void copyDiagnostic(detail.summary.id)}>
+                复制诊断信息
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => setDetail(null)}>关闭</Button>
             </div>
-          </section>
-        </div>
+          </div>
+        </ModalShell>
       )}
-    </section>
+    </Panel>
   );
 }

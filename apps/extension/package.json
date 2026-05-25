@@ -11,6 +11,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@proxy2localai/shared": "0.1.0"
+    "@proxy2localai/shared": "0.1.0",
+    "@tailwindcss/vite": "^4.3.0",
+    "lucide-react": "^1.16.0",
+    "tailwindcss": "^4.3.0"
   }
 }

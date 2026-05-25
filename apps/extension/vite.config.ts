@@ -1,4 +1,5 @@
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -6,7 +7,7 @@ import path from "node:path";
 const rootDir = fileURLToPath(new URL("../..", import.meta.url));
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
       "@proxy2localai/shared": path.resolve(rootDir, "packages/shared/src/index.ts")

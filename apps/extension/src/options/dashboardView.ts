@@ -15,6 +15,16 @@ export interface DashboardStatus {
   failedRequestCount: number;
 }
 
+export type ProxyChainStepId = "dnr" | "bridge" | "profile" | "provider" | "response" | "client";
+export type ProxyChainStepState = "ok" | "warning" | "pending";
+
+export interface ProxyChainStep {
+  id: ProxyChainStepId;
+  label: string;
+  state: ProxyChainStepState;
+  detail: string;
+}
+
 const STAGE_LABELS: Record<string, string> = {
   request_received: "Bridge 已接收",
   profile_matched: "Profile 匹配",
@@ -72,4 +82,73 @@ export function buildDashboardStatus(
     enabledProfileCount: config.profiles.filter((profile) => profile.enabled).length,
     failedRequestCount: getFailedRequestCount(diagnostics)
   };
+}
+
+const CHAIN_STEPS: Array<Omit<ProxyChainStep, "state" | "detail">> = [
+  { id: "dnr", label: "浏览器规则" },
+  { id: "bridge", label: "Bridge" },
+  { id: "profile", label: "Profile" },
+  { id: "provider", label: "Provider" },
+  { id: "response", label: "响应转换" },
+  { id: "client", label: "页面消费" }
+];
+
+const STAGE_STEP_MAP: Record<string, ProxyChainStepId> = {
+  dnr_not_matched: "dnr",
+  request_received: "bridge",
+  cors_preflight: "bridge",
+  cors_preflight_failed: "bridge",
+  profile_matched: "profile",
+  profile_not_found: "profile",
+  provider_spawn: "provider",
+  provider_first_output: "provider",
+  provider_done: "provider",
+  provider_no_output: "provider",
+  provider_error: "provider",
+  provider_timeout: "provider",
+  response_mapped: "response",
+  response_done: "response",
+  response_transform_failed: "response",
+  client_aborted: "client"
+};
+
+export function buildProxyChainSteps(
+  health: DashboardHealth | null,
+  diagnostics: RequestDiagnosticSummary[]
+): ProxyChainStep[] {
+  const latestFailure = diagnostics.find((item) => item.finalStatus === "error");
+  const failureStep = latestFailure?.errorStage ? STAGE_STEP_MAP[latestFailure.errorStage] : undefined;
+  const failureIndex = failureStep ? CHAIN_STEPS.findIndex((step) => step.id === failureStep) : -1;
+
+  if (!health?.ok) {
+    return CHAIN_STEPS.map((step, index) => ({
+      ...step,
+      state: index === 1 ? "warning" : index < 1 ? "ok" : "pending",
+      detail: index === 1 ? "Bridge 离线" : index < 1 ? "等待请求" : "未验证"
+    }));
+  }
+
+  return CHAIN_STEPS.map((step, index) => {
+    if (!latestFailure || failureIndex < 0) {
+      return {
+        ...step,
+        state: index < 2 ? "ok" : "pending",
+        detail: index < 2 ? "正常" : "等待请求"
+      };
+    }
+
+    if (index < failureIndex) {
+      return { ...step, state: "ok", detail: "已通过" };
+    }
+
+    if (index === failureIndex) {
+      return {
+        ...step,
+        state: "warning",
+        detail: getDiagnosticStageLabel(latestFailure.errorStage)
+      };
+    }
+
+    return { ...step, state: "pending", detail: "未验证" };
+  });
 }

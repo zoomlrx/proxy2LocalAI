@@ -7,6 +7,7 @@ export interface PopupProfileItem {
   name: string;
   enabled: boolean;
   responseMode: string;
+  switchLabel: string;
 }
 
 export interface PopupViewModel {
@@ -42,7 +43,8 @@ export function buildPopupViewModel(
       id: profile.id,
       name: profile.name,
       enabled: profile.enabled,
-      responseMode: profile.responseMode
+      responseMode: profile.responseMode,
+      switchLabel: `${profile.enabled ? "停用" : "启用"} ${profile.name}`
     })),
     hasMoreProfiles: profiles.length > profileLimit,
     recentFailure: recentFailure

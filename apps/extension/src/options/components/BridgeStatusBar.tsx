@@ -1,5 +1,7 @@
 import React from "react";
+import { Download, HeartPulse, RotateCw, Settings, Stethoscope } from "lucide-react";
 import type { BridgeDoctorReport } from "../../lib/bridgeApi";
+import { Button, Panel, Pill, StatusDot } from "../../ui/components";
 import type { DashboardStatus } from "../dashboardView";
 
 interface BridgeStatusBarProps {
@@ -23,64 +25,88 @@ export function BridgeStatusBar({
   onOpenBridgeSettings,
   onOpenConfigTools
 }: BridgeStatusBarProps) {
-  return (
-    <>
-      <header className="topbar">
-        <div>
-          <h1>
-            Proxy2LocalAI
-            {dashboard.bridgeVersionLabel && (
-              <small className="version-badge">
-                {dashboard.bridgeVersionLabel}
-              </small>
-            )}
-          </h1>
-          <p aria-live="polite">{status}</p>
-        </div>
-        <div className="actions">
-          <button type="button" onClick={onTestBridge}>测试 Bridge</button>
-          <button type="button" onClick={onRunDoctor}>自检 Bridge</button>
-          <button type="button" onClick={onSync}>同步</button>
-          <button type="button" className="secondary" onClick={onOpenConfigTools}>导入导出</button>
-          <button type="button" className="secondary" onClick={onOpenBridgeSettings}>设置</button>
-        </div>
-      </header>
+  const bridgeTone = dashboard.bridgeState === "online" ? "success" : "danger";
 
-      <section className="status-strip" aria-label="代理控制台状态">
-        <div className={`status-tile ${dashboard.bridgeState}`}>
-          <span>Bridge</span>
-          <strong>{dashboard.bridgeLabel}</strong>
+  return (
+    <aside className="grid content-start gap-4 lg:sticky lg:top-5">
+      <Panel className="grid gap-4">
+        <div className="grid grid-cols-[32px_minmax(0,1fr)] items-center gap-3">
+          <div className="grid h-8 w-8 place-items-center rounded-[7px] bg-[#102923] font-mono text-sm font-bold text-[#a9f3e1]">
+            P2
+          </div>
+          <div className="min-w-0">
+            <strong className="block truncate text-console-strong">Proxy2LocalAI</strong>
+            <span className="text-xs text-console-subtle">{dashboard.bridgeVersionLabel || "local console"}</span>
+          </div>
         </div>
-        <div className="status-tile">
-          <span>同步状态</span>
-          <strong>{status}</strong>
+
+        <div className="grid gap-2 rounded-console-sm border border-[rgba(22,130,85,0.28)] bg-console-success-soft p-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <StatusDot tone={bridgeTone} />
+            <strong className="truncate text-sm text-console-strong">{dashboard.bridgeLabel}</strong>
+          </div>
+          <code className="truncate font-mono text-xs text-console-text">{status}</code>
         </div>
-        <div className="status-tile">
-          <span>启用 Profile</span>
-          <strong>{dashboard.enabledProfileCount}/{dashboard.profileCount}</strong>
+
+        <nav className="grid gap-2" aria-label="控制台快捷操作">
+          <Button type="button" variant="secondary" fullWidth icon={<HeartPulse size={16} aria-hidden="true" />} onClick={onTestBridge}>
+            测试 Bridge
+          </Button>
+          <Button type="button" variant="secondary" fullWidth icon={<Stethoscope size={16} aria-hidden="true" />} onClick={onRunDoctor}>
+            自检 Bridge
+          </Button>
+          <Button type="button" variant="secondary" fullWidth icon={<RotateCw size={16} aria-hidden="true" />} onClick={onSync}>
+            同步规则
+          </Button>
+          <Button type="button" variant="ghost" fullWidth icon={<Download size={16} aria-hidden="true" />} onClick={onOpenConfigTools}>
+            导入导出
+          </Button>
+          <Button type="button" variant="ghost" fullWidth icon={<Settings size={16} aria-hidden="true" />} onClick={onOpenBridgeSettings}>
+            Bridge 设置
+          </Button>
+        </nav>
+      </Panel>
+
+      <Panel className="grid gap-3 border-dashed bg-console-muted">
+        <div className="flex items-center justify-between gap-3">
+          <strong className="text-sm text-console-strong">运行摘要</strong>
+          <Pill tone={dashboard.failedRequestCount > 0 ? "warning" : "success"}>
+            {dashboard.failedRequestCount > 0 ? "需关注" : "正常"}
+          </Pill>
         </div>
-        <div className={dashboard.failedRequestCount > 0 ? "status-tile error" : "status-tile ok"}>
-          <span>最近失败</span>
-          <strong>{dashboard.failedRequestCount}</strong>
-        </div>
-      </section>
+        <dl className="grid gap-2 text-xs">
+          <div className="grid grid-cols-[82px_minmax(0,1fr)] gap-2">
+            <dt className="font-semibold text-console-subtle">启用代理</dt>
+            <dd className="truncate text-console-text">{dashboard.enabledProfileCount}/{dashboard.profileCount}</dd>
+          </div>
+          <div className="grid grid-cols-[82px_minmax(0,1fr)] gap-2">
+            <dt className="font-semibold text-console-subtle">最近失败</dt>
+            <dd className="truncate text-console-text">{dashboard.failedRequestCount} 次</dd>
+          </div>
+        </dl>
+      </Panel>
 
       {doctorReport && (
-        <section className="doctor-panel">
-          <div className="doctor-title">
-            <strong>Bridge 自检</strong>
-            <small>{doctorReport.service} · {doctorReport.summary.enabledProfileCount}/{doctorReport.summary.profileCount} 启用</small>
+        <Panel className="grid gap-3">
+          <div className="grid gap-1">
+            <strong className="text-sm text-console-strong">Bridge 自检</strong>
+            <span className="text-xs text-console-subtle">
+              {doctorReport.service} · {doctorReport.summary.enabledProfileCount}/{doctorReport.summary.profileCount} 启用
+            </span>
           </div>
-          <ul>
+          <ul className="grid gap-2 p-0">
             {doctorReport.checks.map((check) => (
-              <li key={check.id} className={`doctor-check ${check.status}`}>
-                <span>{check.label}</span>
-                <small>{check.message}</small>
+              <li key={check.id} className="grid grid-cols-[10px_minmax(0,1fr)] items-start gap-2 rounded-console-sm bg-console-muted p-2">
+                <StatusDot tone={check.status === "error" ? "danger" : check.status === "warning" ? "warning" : "success"} className="mt-1" />
+                <div className="min-w-0">
+                  <span className="block truncate text-xs font-semibold text-console-text">{check.label}</span>
+                  <small className="block break-anywhere text-xs leading-5 text-console-subtle">{check.message}</small>
+                </div>
               </li>
             ))}
           </ul>
-        </section>
+        </Panel>
       )}
-    </>
+    </aside>
   );
 }

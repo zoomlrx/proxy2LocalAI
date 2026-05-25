@@ -1,0 +1,1582 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Proxy2LocalAI 控制台重设计稿</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --surface: #ffffff;
+      --surface-muted: #f8fafb;
+      --surface-raised: #eef3f5;
+      --text: #172026;
+      --text-strong: #0c1419;
+      --text-muted: #63717a;
+      --border: #d8e0e5;
+      --border-strong: #bcc9d1;
+      --primary: #0f6b5f;
+      --primary-hover: #0a574d;
+      --primary-soft: #e2f2ef;
+      --success: #168255;
+      --success-soft: #e3f7eb;
+      --warning: #a66500;
+      --warning-soft: #fff5dc;
+      --danger: #b83232;
+      --danger-soft: #fde8e8;
+      --info: #2369a8;
+      --info-soft: #e7f1fb;
+      --focus: 0 0 0 3px rgba(15, 107, 95, 0.2);
+      --shadow: 0 18px 48px rgba(14, 25, 32, 0.12);
+      --radius: 8px;
+      --radius-sm: 6px;
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-5: 20px;
+      --space-6: 24px;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 14px;
+      letter-spacing: 0;
+    }
+
+    body {
+      margin: 0;
+    }
+
+    button,
+    input,
+    textarea,
+    select {
+      font: inherit;
+    }
+
+    button,
+    .clickable {
+      cursor: pointer;
+    }
+
+    button {
+      display: inline-flex;
+      min-height: 36px;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border: 1px solid var(--primary);
+      border-radius: var(--radius-sm);
+      background: var(--primary);
+      color: #fff;
+      padding: 0 12px;
+      font-weight: 650;
+      transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    button:hover {
+      border-color: var(--primary-hover);
+      background: var(--primary-hover);
+    }
+
+    button:focus-visible,
+    a:focus-visible,
+    input:focus-visible,
+    textarea:focus-visible,
+    select:focus-visible,
+    summary:focus-visible {
+      outline: none;
+      box-shadow: var(--focus);
+    }
+
+    button.secondary {
+      border-color: var(--border-strong);
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    button.secondary:hover {
+      background: var(--surface-raised);
+    }
+
+    button.ghost {
+      border-color: transparent;
+      background: transparent;
+      color: var(--text);
+    }
+
+    button.ghost:hover {
+      border-color: var(--border);
+      background: var(--surface-raised);
+    }
+
+    button.danger {
+      border-color: var(--danger);
+      background: var(--danger);
+    }
+
+    button.icon-only {
+      width: 36px;
+      padding: 0;
+    }
+
+    button:disabled,
+    input:disabled,
+    textarea:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+
+    h1,
+    h2,
+    h3,
+    p,
+    dl {
+      margin: 0;
+    }
+
+    h1 {
+      color: var(--text-strong);
+      font-size: 22px;
+      line-height: 1.2;
+    }
+
+    h2 {
+      color: var(--text-strong);
+      font-size: 16px;
+      line-height: 1.25;
+    }
+
+    h3 {
+      color: var(--text-strong);
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    p {
+      color: var(--text-muted);
+      line-height: 1.55;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    .page {
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .design-shell {
+      display: grid;
+      grid-template-columns: 236px minmax(0, 1fr) 352px;
+      gap: 16px;
+      max-width: 1440px;
+      margin: 0 auto;
+    }
+
+    .side,
+    .main,
+    .inspector,
+    .spec-section {
+      min-width: 0;
+    }
+
+    .side {
+      display: grid;
+      gap: 16px;
+      align-self: start;
+      position: sticky;
+      top: 20px;
+    }
+
+    .brand-panel,
+    .panel,
+    .inspector-panel,
+    .spec-panel {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+
+    .brand-panel {
+      display: grid;
+      gap: 14px;
+      padding: 16px;
+    }
+
+    .brand-row {
+      display: grid;
+      grid-template-columns: 32px minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+    }
+
+    .brand-mark {
+      display: grid;
+      width: 32px;
+      height: 32px;
+      place-items: center;
+      border-radius: 7px;
+      background: #102923;
+      color: #a9f3e1;
+      font-family: var(--mono);
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .brand-title {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .brand-title strong {
+      overflow: hidden;
+      color: var(--text-strong);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .version {
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .health-card {
+      display: grid;
+      gap: 8px;
+      border: 1px solid rgba(22, 130, 85, 0.28);
+      border-radius: var(--radius-sm);
+      background: var(--success-soft);
+      padding: 10px;
+    }
+
+    .status-line {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      flex: 0 0 auto;
+      border-radius: 999px;
+      background: var(--text-muted);
+    }
+
+    .dot.success {
+      background: var(--success);
+      box-shadow: 0 0 0 4px rgba(22, 130, 85, 0.12);
+    }
+
+    .dot.warning {
+      background: var(--warning);
+      box-shadow: 0 0 0 4px rgba(166, 101, 0, 0.12);
+    }
+
+    .dot.danger {
+      background: var(--danger);
+      box-shadow: 0 0 0 4px rgba(184, 50, 50, 0.12);
+    }
+
+    .health-card code,
+    .code {
+      overflow: hidden;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .nav {
+      display: grid;
+      gap: 4px;
+      padding: 8px;
+    }
+
+    .nav a {
+      display: grid;
+      grid-template-columns: 20px minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      min-height: 38px;
+      padding: 0 10px;
+    }
+
+    .nav a:hover {
+      border-color: var(--border);
+      background: var(--surface-muted);
+    }
+
+    .nav a.active {
+      border-color: rgba(15, 107, 95, 0.28);
+      background: var(--primary-soft);
+      color: #0a574d;
+      font-weight: 700;
+    }
+
+    .nav .icon {
+      display: grid;
+      place-items: center;
+      color: currentColor;
+    }
+
+    .nav .count,
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface);
+      color: var(--text-muted);
+      min-height: 22px;
+      padding: 0 8px;
+      font-size: 12px;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+
+    .pill.success {
+      border-color: rgba(22, 130, 85, 0.28);
+      background: var(--success-soft);
+      color: #0b6740;
+    }
+
+    .pill.warning {
+      border-color: rgba(166, 101, 0, 0.28);
+      background: var(--warning-soft);
+      color: #734900;
+    }
+
+    .pill.danger {
+      border-color: rgba(184, 50, 50, 0.28);
+      background: var(--danger-soft);
+      color: #8f2222;
+    }
+
+    .pill.info {
+      border-color: rgba(35, 105, 168, 0.28);
+      background: var(--info-soft);
+      color: #164f81;
+    }
+
+    .side-note {
+      display: grid;
+      gap: 8px;
+      border: 1px dashed var(--border-strong);
+      border-radius: var(--radius);
+      background: var(--surface-muted);
+      padding: 12px;
+    }
+
+    .main {
+      display: grid;
+      gap: 16px;
+    }
+
+    .workspace-header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+      min-height: 64px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      padding: 16px;
+    }
+
+    .title-stack {
+      display: grid;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    .title-stack p {
+      max-width: 780px;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .metric {
+      display: grid;
+      gap: 7px;
+      min-width: 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      padding: 12px;
+    }
+
+    .metric span {
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .metric strong {
+      overflow: hidden;
+      color: var(--text-strong);
+      font-size: 18px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .metric small {
+      overflow: hidden;
+      color: var(--text-muted);
+      font-size: 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .panel {
+      display: grid;
+      gap: 14px;
+      padding: 16px;
+    }
+
+    .panel-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .panel-title {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .subtle {
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .flow-step {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface-muted);
+      padding: 10px;
+    }
+
+    .flow-step strong {
+      overflow: hidden;
+      color: var(--text-strong);
+      font-size: 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .flow-step small {
+      overflow: hidden;
+      color: var(--text-muted);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .flow-step.ok {
+      border-color: rgba(22, 130, 85, 0.28);
+      background: var(--success-soft);
+    }
+
+    .flow-step.warn {
+      border-color: rgba(166, 101, 0, 0.3);
+      background: var(--warning-soft);
+    }
+
+    .quick-start {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      border: 1px solid rgba(35, 105, 168, 0.26);
+      border-radius: var(--radius);
+      background: var(--info-soft);
+      padding: 14px;
+    }
+
+    .request-input {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: end;
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    textarea,
+    input,
+    select {
+      width: 100%;
+      min-height: 38px;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      color: var(--text);
+      padding: 8px 10px;
+    }
+
+    textarea {
+      min-height: 78px;
+      resize: vertical;
+    }
+
+    .rule-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .rule-table th,
+    .rule-table td {
+      border-bottom: 1px solid var(--border);
+      padding: 11px 10px;
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    .rule-table th {
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .rule-table tr.selected {
+      background: var(--primary-soft);
+      box-shadow: inset 3px 0 0 var(--primary);
+    }
+
+    .rule-name {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .rule-name strong,
+    .truncate {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .method {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      background: #edf1f4;
+      color: #25333b;
+      min-width: 44px;
+      padding: 3px 6px;
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .switch {
+      position: relative;
+      display: inline-flex;
+      width: 38px;
+      height: 22px;
+      align-items: center;
+      border-radius: 999px;
+      background: var(--border-strong);
+      vertical-align: middle;
+    }
+
+    .switch::after {
+      position: absolute;
+      left: 3px;
+      width: 16px;
+      height: 16px;
+      border-radius: 999px;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+      content: "";
+    }
+
+    .switch.on {
+      background: var(--primary);
+    }
+
+    .switch.on::after {
+      left: 19px;
+    }
+
+    .row-actions {
+      display: flex;
+      gap: 6px;
+      justify-content: flex-end;
+      white-space: nowrap;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 0.7fr);
+      gap: 14px;
+      align-items: start;
+    }
+
+    .stack {
+      display: grid;
+      gap: 10px;
+    }
+
+    .config-block {
+      display: grid;
+      gap: 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-muted);
+      padding: 12px;
+    }
+
+    .config-block.expert {
+      border-color: rgba(166, 101, 0, 0.34);
+      background: var(--warning-soft);
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .option-row {
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: start;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      padding: 10px;
+    }
+
+    .radio {
+      width: 14px;
+      height: 14px;
+      margin-top: 2px;
+      border: 4px solid var(--primary);
+      border-radius: 999px;
+      background: var(--surface);
+    }
+
+    .inspector {
+      display: grid;
+      gap: 16px;
+      align-self: start;
+      position: sticky;
+      top: 20px;
+    }
+
+    .inspector-panel {
+      display: grid;
+      gap: 14px;
+      padding: 14px;
+    }
+
+    .summary-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .summary-item {
+      display: grid;
+      grid-template-columns: 92px minmax(0, 1fr);
+      gap: 8px;
+      align-items: baseline;
+    }
+
+    .summary-item dt {
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .summary-item dd {
+      min-width: 0;
+      margin: 0;
+      color: var(--text);
+    }
+
+    .timeline {
+      display: grid;
+      gap: 0;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .timeline li {
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: start;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .timeline li:last-child {
+      border-bottom: 0;
+    }
+
+    .timeline strong {
+      display: block;
+      color: var(--text-strong);
+      font-size: 13px;
+    }
+
+    .error-box {
+      display: grid;
+      gap: 8px;
+      border: 1px solid rgba(184, 50, 50, 0.28);
+      border-radius: var(--radius);
+      background: var(--danger-soft);
+      padding: 12px;
+    }
+
+    .warning-box {
+      display: grid;
+      gap: 8px;
+      border: 1px solid rgba(166, 101, 0, 0.3);
+      border-radius: var(--radius);
+      background: var(--warning-soft);
+      padding: 12px;
+    }
+
+    .copy-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface-muted);
+      padding: 8px;
+    }
+
+    .popup-preview {
+      width: 320px;
+      max-width: 100%;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      padding: 14px;
+    }
+
+    .popup-preview header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: start;
+      margin-bottom: 12px;
+    }
+
+    .popup-preview h2 {
+      font-size: 17px;
+    }
+
+    .mini-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .mini-stat {
+      display: grid;
+      gap: 3px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 8px;
+    }
+
+    .mini-stat span {
+      color: var(--text-muted);
+      font-size: 11px;
+    }
+
+    .mini-stat strong {
+      font-size: 16px;
+    }
+
+    .popup-list {
+      display: grid;
+      gap: 8px;
+      margin: 12px 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .popup-list li {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      border-top: 1px solid var(--border);
+      padding-top: 8px;
+    }
+
+    .tab-row {
+      display: inline-flex;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      padding: 3px;
+    }
+
+    .tab-row button {
+      min-height: 30px;
+      border-color: transparent;
+      background: transparent;
+      color: var(--text-muted);
+      padding: 0 10px;
+    }
+
+    .tab-row button.active {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .modal-preview {
+      display: grid;
+      grid-template-columns: 248px minmax(0, 1fr);
+      gap: 0;
+      overflow: hidden;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .wizard-rail {
+      display: grid;
+      align-content: start;
+      gap: 10px;
+      background: #12201d;
+      color: #dce7e4;
+      padding: 18px;
+    }
+
+    .wizard-rail p {
+      color: #b8c8c4;
+    }
+
+    .wizard-step {
+      display: grid;
+      grid-template-columns: 24px minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+      padding: 8px 0;
+    }
+
+    .wizard-step .num {
+      display: grid;
+      width: 24px;
+      height: 24px;
+      place-items: center;
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      border-radius: 999px;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .wizard-step.active .num {
+      border-color: #89e7d5;
+      background: #0f6b5f;
+    }
+
+    .wizard-body {
+      display: grid;
+      gap: 14px;
+      align-content: start;
+      padding: 18px;
+    }
+
+    .spec-section {
+      display: grid;
+      gap: 16px;
+      max-width: 1440px;
+      margin: 24px auto 0;
+    }
+
+    .spec-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .spec-panel {
+      display: grid;
+      gap: 10px;
+      padding: 16px;
+    }
+
+    .spec-panel ul {
+      display: grid;
+      gap: 7px;
+      margin: 0;
+      padding-left: 18px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .swatches {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .swatch {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .swatch span {
+      height: 32px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+    }
+
+    .swatch small {
+      overflow: hidden;
+      color: var(--text-muted);
+      font-family: var(--mono);
+      font-size: 11px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+
+    @media (max-width: 1180px) {
+      .design-shell {
+        grid-template-columns: 220px minmax(0, 1fr);
+      }
+
+      .inspector {
+        grid-column: 1 / -1;
+        position: static;
+      }
+
+      .inspector {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 860px) {
+      .page {
+        padding: 12px;
+      }
+
+      .design-shell,
+      .split,
+      .modal-preview,
+      .spec-grid,
+      .inspector,
+      .workspace-header,
+      .quick-start,
+      .request-input {
+        grid-template-columns: 1fr;
+      }
+
+      .side {
+        position: static;
+      }
+
+      .status-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .flow {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .rule-table {
+        min-width: 760px;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .status-grid,
+      .field-grid,
+      .flow,
+      .mini-stats {
+        grid-template-columns: 1fr;
+      }
+
+      .toolbar,
+      .row-actions {
+        justify-content: stretch;
+      }
+
+      .toolbar button,
+      .row-actions button {
+        flex: 1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="design-shell" aria-label="Proxy2LocalAI 新版控制台设计稿">
+      <aside class="side" aria-label="全局导航">
+        <section class="brand-panel">
+          <div class="brand-row">
+            <div class="brand-mark" aria-hidden="true">P2</div>
+            <div class="brand-title">
+              <strong>Proxy2LocalAI</strong>
+              <span class="version">Bridge v0.1.0 · proto v1</span>
+            </div>
+          </div>
+          <div class="health-card" aria-live="polite">
+            <div class="status-line">
+              <span class="dot success" aria-hidden="true"></span>
+              <strong>系统就绪</strong>
+            </div>
+            <code title="http://127.0.0.1:39399">127.0.0.1:39399</code>
+            <span class="subtle">2 个规则已同步，1 个规则需要修复 ID</span>
+          </div>
+        </section>
+
+        <nav class="panel nav" aria-label="主导航">
+          <a class="active" href="#overview">
+            <span class="icon" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            <span>总览</span>
+            <span class="count">4</span>
+          </a>
+          <a href="#rules">
+            <span class="icon" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M6 7h12M6 12h12M6 17h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </span>
+            <span>代理规则</span>
+            <span class="count">2</span>
+          </a>
+          <a href="#diagnostics">
+            <span class="icon" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M12 3v5m0 8v5m9-9h-5M8 12H3m14.4-5.4-3.5 3.5M10.1 13.9l-3.5 3.5m10.8 0-3.5-3.5M10.1 10.1 6.6 6.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </span>
+            <span>请求诊断</span>
+            <span class="count">12</span>
+          </a>
+          <a href="#providers">
+            <span class="icon" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M7 8h10M7 12h6m-6 4h10M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            <span>Provider</span>
+          </a>
+          <a href="#security">
+            <span class="icon" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M12 3 5 6v5c0 4.4 2.8 8.4 7 10 4.2-1.6 7-5.6 7-10V6l-7-3Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            <span>安全与权限</span>
+            <span class="count">1</span>
+          </a>
+          <a href="#settings">
+            <span class="icon" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z" stroke="currentColor" stroke-width="1.8"/>
+                <path d="M19 12a7.4 7.4 0 0 0-.1-1.1l2-1.5-2-3.4-2.4 1a7.3 7.3 0 0 0-1.9-1.1L14.3 3h-4.6l-.4 2.9A7.3 7.3 0 0 0 7.5 7l-2.4-1-2 3.4 2 1.5A7.4 7.4 0 0 0 5 12c0 .4 0 .8.1 1.1l-2 1.5 2 3.4 2.4-1c.6.5 1.2.8 1.9 1.1l.4 2.9h4.6l.4-2.9c.7-.3 1.3-.6 1.9-1.1l2.4 1 2-3.4-2-1.5c.1-.3.1-.7.1-1.1Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            <span>系统设置</span>
+          </a>
+        </nav>
+
+        <section class="side-note">
+          <h3>设计原则</h3>
+          <p>左侧只承载入口与全局状态；用户日常操作保持在中间主工作区；风险、诊断和详情进入右侧检查器或独立面板。</p>
+        </section>
+      </aside>
+
+      <section class="main">
+        <header class="workspace-header" id="overview">
+          <div class="title-stack">
+            <h1>代理控制台</h1>
+            <p>确认请求是否被代理、代理到哪里、由哪个本地 AI 处理，以及失败时卡在哪个阶段。</p>
+          </div>
+          <div class="toolbar" aria-label="全局操作">
+            <button type="button">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              新建代理
+            </button>
+            <button type="button" class="secondary">同步规则</button>
+            <button type="button" class="secondary">运行诊断</button>
+          </div>
+        </header>
+
+        <section class="status-grid" aria-label="核心状态">
+          <article class="metric">
+            <span>Bridge</span>
+            <strong>在线</strong>
+            <small>36ms · 127.0.0.1:39399</small>
+          </article>
+          <article class="metric">
+            <span>代理规则</span>
+            <strong>2 / 2 启用</strong>
+            <small>Chrome DNR 已同步</small>
+          </article>
+          <article class="metric">
+            <span>Provider</span>
+            <strong>Claude Code</strong>
+            <small>当前规则默认</small>
+          </article>
+          <article class="metric">
+            <span>最近失败</span>
+            <strong>1 次</strong>
+            <small>阶段：响应转换</small>
+          </article>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div class="panel-title">
+              <h2>请求链路健康度</h2>
+              <p>将故障定位从“一个错误提示”拆成可验证的阶段。</p>
+            </div>
+            <span class="pill warning">1 个提醒</span>
+          </div>
+          <div class="flow" aria-label="代理链路阶段">
+            <div class="flow-step ok">
+              <span class="dot success" aria-hidden="true"></span>
+              <strong>浏览器规则</strong>
+              <small>DNR 命中</small>
+            </div>
+            <div class="flow-step ok">
+              <span class="dot success" aria-hidden="true"></span>
+              <strong>Bridge</strong>
+              <small>已接收</small>
+            </div>
+            <div class="flow-step ok">
+              <span class="dot success" aria-hidden="true"></span>
+              <strong>Profile</strong>
+              <small>匹配成功</small>
+            </div>
+            <div class="flow-step ok">
+              <span class="dot success" aria-hidden="true"></span>
+              <strong>Provider</strong>
+              <small>已返回</small>
+            </div>
+            <div class="flow-step warn">
+              <span class="dot warning" aria-hidden="true"></span>
+              <strong>响应转换</strong>
+              <small>SSE 映射缺失</small>
+            </div>
+            <div class="flow-step">
+              <span class="dot" aria-hidden="true"></span>
+              <strong>页面消费</strong>
+              <small>未验证</small>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="quick-start">
+            <div class="panel-title">
+              <h2>从一个 cURL 创建代理</h2>
+              <p>首次上手优先走向导：检查 Bridge、解析请求、选择 Provider、预览摘要、测试后保存。</p>
+            </div>
+            <button type="button" class="secondary">打开向导</button>
+          </div>
+          <div class="request-input">
+            <label>
+              粘贴 cURL
+              <textarea placeholder="curl 'https://api.example.com/v1/chat/completions' -X POST --data-raw '{...}'"></textarea>
+            </label>
+            <button type="button">解析并预览</button>
+          </div>
+        </section>
+
+        <section class="panel" id="rules">
+          <div class="panel-head">
+            <div class="panel-title">
+              <h2>代理规则</h2>
+              <p>列表只展示识别和控制所需字段；完整字段在右侧检查器或编辑抽屉中分层展开。</p>
+            </div>
+            <div class="tab-row" role="tablist" aria-label="规则过滤">
+              <button type="button" class="active" role="tab" aria-selected="true">全部</button>
+              <button type="button" role="tab" aria-selected="false">启用</button>
+              <button type="button" role="tab" aria-selected="false">异常</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="rule-table">
+              <thead>
+                <tr>
+                  <th scope="col">状态</th>
+                  <th scope="col">规则</th>
+                  <th scope="col">目标接口</th>
+                  <th scope="col">Provider</th>
+                  <th scope="col">响应</th>
+                  <th scope="col">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="selected">
+                  <td><span class="switch on" aria-label="已启用"></span></td>
+                  <td>
+                    <div class="rule-name">
+                      <strong>智能问答</strong>
+                      <span class="subtle">profile-mpld7wdt</span>
+                    </div>
+                  </td>
+                  <td>
+                    <span class="method">POST</span>
+                    <span class="truncate" title="api.example.com/v1/chat/completions">api.example.com/v1/chat/completions</span>
+                  </td>
+                  <td><span class="pill success">Claude Code</span></td>
+                  <td><span class="pill info">Mapped SSE</span></td>
+                  <td>
+                    <div class="row-actions">
+                      <button type="button" class="secondary">测试</button>
+                      <button type="button" class="ghost">编辑</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td><span class="switch on" aria-label="已启用"></span></td>
+                  <td>
+                    <div class="rule-name">
+                      <strong>OpenAI 兼容接口</strong>
+                      <span class="subtle">需要唯一 ID</span>
+                    </div>
+                  </td>
+                  <td>
+                    <span class="method">POST</span>
+                    <span class="truncate" title="qiqiao-tcb-qa.qiweioa.com.cn/v1/chat/completions">qiqiao-tcb-qa.qiweioa.com.cn/v1/chat/completions</span>
+                  </td>
+                  <td><span class="pill success">Codex</span></td>
+                  <td><span class="pill">Block JSON</span></td>
+                  <td>
+                    <div class="row-actions">
+                      <button type="button" class="secondary">测试</button>
+                      <button type="button" class="ghost">编辑</button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div class="panel-title">
+              <h2>配置编辑模型</h2>
+              <p>字段按风险和使用频率分层，避免普通用户被专家项打断。</p>
+            </div>
+            <span class="pill">编辑抽屉示例</span>
+          </div>
+          <div class="split">
+            <div class="stack">
+              <section class="config-block">
+                <div class="panel-head">
+                  <h3>基础配置</h3>
+                  <span class="pill success">默认展开</span>
+                </div>
+                <div class="field-grid">
+                  <label>规则名称<input value="智能问答" aria-label="规则名称"></label>
+                  <label>AI Provider<select aria-label="AI Provider"><option>Claude Code</option></select></label>
+                  <label>目标域名<input value="https://api.example.com" aria-label="目标域名"></label>
+                  <label>接口路径<input value="/v1/chat/completions" aria-label="接口路径"></label>
+                </div>
+              </section>
+              <section class="config-block">
+                <div class="panel-head">
+                  <h3>高级配置</h3>
+                  <span class="pill">按需展开</span>
+                </div>
+                <div class="option-row">
+                  <span class="radio" aria-hidden="true"></span>
+                  <div>
+                    <strong>启用多轮上下文记忆</strong>
+                    <p>仅在目标页面需要会话连续性时打开。</p>
+                  </div>
+                  <span class="pill">关闭</span>
+                </div>
+              </section>
+              <section class="config-block expert">
+                <div class="panel-head">
+                  <h3>专家配置</h3>
+                  <span class="pill warning">风险隔离</span>
+                </div>
+                <p>CLI 参数、自定义 JSON 模板、正则提取和本地路径只在专家区展示，并在保存前要求用户确认风险摘要。</p>
+              </section>
+            </div>
+            <div class="warning-box">
+              <h3>保存前预览</h3>
+              <dl class="summary-list">
+                <div class="summary-item"><dt>将代理</dt><dd class="truncate">POST api.example.com/v1/chat/completions</dd></div>
+                <div class="summary-item"><dt>转发到</dt><dd class="truncate">http://127.0.0.1:39399/proxy/profile-mpld7wdt</dd></div>
+                <div class="summary-item"><dt>本地工具</dt><dd>Claude Code</dd></div>
+                <div class="summary-item"><dt>响应格式</dt><dd>Mapped SSE</dd></div>
+                <div class="summary-item"><dt>风险项</dt><dd>允许高风险 CLI 参数</dd></div>
+              </dl>
+              <button type="button" class="secondary">复制预览摘要</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="modal-preview" aria-label="首次配置向导示例">
+          <aside class="wizard-rail">
+            <h2 style="color:#fff">创建代理</h2>
+            <p>把首次配置拆成可验证步骤，每一步只做一个决策。</p>
+            <div class="wizard-step active">
+              <span class="num">1</span>
+              <div><strong>检查 Bridge</strong><p>确认本地服务可用</p></div>
+            </div>
+            <div class="wizard-step active">
+              <span class="num">2</span>
+              <div><strong>解析 cURL</strong><p>提取目标与请求体</p></div>
+            </div>
+            <div class="wizard-step">
+              <span class="num">3</span>
+              <div><strong>选择 Provider</strong><p>Claude、Codex 或 Custom</p></div>
+            </div>
+            <div class="wizard-step">
+              <span class="num">4</span>
+              <div><strong>测试并保存</strong><p>失败可复制诊断</p></div>
+            </div>
+          </aside>
+          <section class="wizard-body">
+            <div class="panel-title">
+              <h2>确认解析结果</h2>
+              <p>保存前让用户看到关键结果，而不是先落库再排错。</p>
+            </div>
+            <dl class="summary-list">
+              <div class="summary-item"><dt>方法</dt><dd><span class="method">POST</span></dd></div>
+              <div class="summary-item"><dt>目标</dt><dd class="truncate">https://api.example.com/v1/chat/completions</dd></div>
+              <div class="summary-item"><dt>请求体</dt><dd>已识别 messages、stream=false</dd></div>
+              <div class="summary-item"><dt>建议格式</dt><dd><span class="pill info">Block JSON</span></dd></div>
+            </dl>
+            <div class="toolbar" style="justify-content:flex-start">
+              <button type="button" class="secondary">上一步</button>
+              <button type="button">选择 Provider</button>
+            </div>
+          </section>
+        </section>
+      </section>
+
+      <aside class="inspector" aria-label="检查器与弹窗设计">
+        <section class="inspector-panel">
+          <div class="panel-head">
+            <div class="panel-title">
+              <h2>所选规则</h2>
+              <p>智能问答 · profile-mpld7wdt</p>
+            </div>
+            <span class="pill success">启用</span>
+          </div>
+          <dl class="summary-list">
+            <div class="summary-item"><dt>命中条件</dt><dd class="truncate">POST /v1/chat/completions</dd></div>
+            <div class="summary-item"><dt>Provider</dt><dd>Claude Code</dd></div>
+            <div class="summary-item"><dt>响应协议</dt><dd>Mapped SSE</dd></div>
+            <div class="summary-item"><dt>项目路径</dt><dd class="truncate">C:/project/demoProject/proxy2LocalAI</dd></div>
+          </dl>
+          <div class="copy-row">
+            <code>curl .../v1/chat/completions</code>
+            <button type="button" class="secondary">复制</button>
+          </div>
+        </section>
+
+        <section class="inspector-panel" id="diagnostics">
+          <div class="panel-head">
+            <div class="panel-title">
+              <h2>最近请求</h2>
+              <p>2026/5/25 23:29:17 · 421ms</p>
+            </div>
+            <span class="pill warning">部分成功</span>
+          </div>
+          <ol class="timeline">
+            <li>
+              <span class="dot success" aria-hidden="true"></span>
+              <div><strong>DNR 命中</strong><p>规则 1002 匹配目标 URL</p></div>
+              <span class="subtle">2ms</span>
+            </li>
+            <li>
+              <span class="dot success" aria-hidden="true"></span>
+              <div><strong>Bridge 转发</strong><p>请求体已脱敏记录</p></div>
+              <span class="subtle">24ms</span>
+            </li>
+            <li>
+              <span class="dot warning" aria-hidden="true"></span>
+              <div><strong>响应转换</strong><p>缺少 message 映射事件</p></div>
+              <span class="subtle">395ms</span>
+            </li>
+          </ol>
+          <div class="error-box">
+            <h3>下一步建议</h3>
+            <p>检查 Mapped SSE 事件映射；如果目标页面只消费普通 JSON，请改为 Block JSON 并重新测试。</p>
+            <button type="button" class="secondary">复制诊断包</button>
+          </div>
+        </section>
+
+        <section class="inspector-panel">
+          <div class="panel-title">
+            <h2>Popup 设计</h2>
+            <p>弹窗只解决“当前能不能用”和“快速启停”，复杂编辑回到 options。</p>
+          </div>
+          <div class="popup-preview" aria-label="浏览器扩展弹窗新版示例">
+            <header>
+              <div class="brand-title">
+                <h2>Proxy2LocalAI</h2>
+                <span class="version">Bridge 在线 · 36ms</span>
+              </div>
+              <span class="pill success">就绪</span>
+            </header>
+            <div class="mini-stats">
+              <div class="mini-stat"><span>规则</span><strong>2</strong></div>
+              <div class="mini-stat"><span>启用</span><strong>2</strong></div>
+              <div class="mini-stat"><span>失败</span><strong>1</strong></div>
+            </div>
+            <div class="warning-box">
+              <h3>最近失败：响应转换</h3>
+              <p>Mapped SSE 缺少 message 事件。</p>
+            </div>
+            <ul class="popup-list">
+              <li>
+                <div class="rule-name">
+                  <strong>智能问答</strong>
+                  <span class="subtle">Claude · mapped_sse</span>
+                </div>
+                <span class="switch on" aria-label="已启用"></span>
+              </li>
+              <li>
+                <div class="rule-name">
+                  <strong>OpenAI 兼容接口</strong>
+                  <span class="subtle">Codex · block</span>
+                </div>
+                <span class="switch on" aria-label="已启用"></span>
+              </li>
+            </ul>
+            <div class="toolbar" style="justify-content:stretch">
+              <button type="button" class="secondary" style="flex:1">同步</button>
+              <button type="button" style="flex:1">打开控制台</button>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </section>
+
+    <section class="spec-section" aria-label="设计规范与验收标准">
+      <section class="spec-panel">
+        <div class="panel-title">
+          <h2>新的设计语言：克制的开发者工具控制台</h2>
+          <p>视觉重点从“表单堆叠”转向“状态、任务、诊断、风险分层”。页面使用浅色高对比中性色、低饱和主色和清晰边界，让用户更快扫读。</p>
+        </div>
+        <div class="swatches" aria-label="色彩 token">
+          <div class="swatch"><span style="background:#0f6b5f"></span><small>primary</small></div>
+          <div class="swatch"><span style="background:#168255"></span><small>success</small></div>
+          <div class="swatch"><span style="background:#a66500"></span><small>warning</small></div>
+          <div class="swatch"><span style="background:#b83232"></span><small>danger</small></div>
+          <div class="swatch"><span style="background:#ffffff"></span><small>surface</small></div>
+          <div class="swatch"><span style="background:#d8e0e5"></span><small>border</small></div>
+        </div>
+      </section>
+
+      <div class="spec-grid">
+        <section class="spec-panel">
+          <h2>信息架构</h2>
+          <ul>
+            <li>总览：只回答当前系统是否可用、是否同步、最近哪里失败。</li>
+            <li>代理规则：以列表管理启停、测试、编辑，避免表单常驻占满首屏。</li>
+            <li>请求诊断：按 DNR、Bridge、Profile、Provider、响应转换、页面消费分阶段。</li>
+            <li>安全与权限：Token、本地路径、CLI 参数、日志脱敏集中表达风险。</li>
+          </ul>
+        </section>
+        <section class="spec-panel">
+          <h2>组件规范</h2>
+          <ul>
+            <li>按钮必须包含 hover、active、disabled、focus-visible 状态。</li>
+            <li>状态统一使用 dot + 文案 + 颜色，颜色不能作为唯一表达。</li>
+            <li>长 URL、长路径、错误堆栈默认截断，提供展开和复制。</li>
+            <li>普通卡片最大圆角 8px，避免卡片套卡片；详情用检查器或抽屉承载。</li>
+          </ul>
+        </section>
+        <section class="spec-panel">
+          <h2>验收标准</h2>
+          <ul>
+            <li>首次用户能在一个向导内完成 Bridge 检查、cURL 解析、测试、保存。</li>
+            <li>用户能在首屏判断请求链路哪一阶段异常。</li>
+            <li>启停规则、同步、运行诊断是固定可见的高频操作。</li>
+            <li>专家能力不出现在基础表单中，启用前展示风险摘要。</li>
+          </ul>
+        </section>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

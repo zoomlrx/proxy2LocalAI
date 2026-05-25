@@ -13,6 +13,7 @@ import { getBridgeDoctor, getBridgeHealth, testBridgeProvider, type BridgeDoctor
 import { requestProfilePermission } from "../lib/permissions";
 import { getChromeConfigStorage } from "../lib/storage";
 import { syncBridgeThenApplyRules } from "../lib/sync";
+import { Button, Field, ModalShell, Panel, Pill, StatusDot } from "../ui/components";
 import {
   applyCurlToDraft,
   createBlankProfile,
@@ -26,7 +27,8 @@ import { ProfileList } from "./components/ProfileList";
 import { ProfileEditor } from "./components/ProfileEditor";
 import { CreateProxyWizard } from "./components/CreateProxyWizard";
 import { RecentRequestsPanel } from "./components/RecentRequestsPanel";
-import { buildDashboardStatus } from "./dashboardView";
+import { buildDashboardStatus, buildProxyChainSteps } from "./dashboardView";
+import { Plus, RotateCw } from "lucide-react";
 import "../ui.css";
 
 function OptionsApp() {
@@ -91,6 +93,10 @@ function OptionsApp() {
   const dashboardStatus = useMemo(
     () => config ? buildDashboardStatus(config, health, recentDiagnostics) : null,
     [config, health, recentDiagnostics]
+  );
+  const proxyChainSteps = useMemo(
+    () => buildProxyChainSteps(health, recentDiagnostics),
+    [health, recentDiagnostics]
   );
 
   const persistConfig = useCallback(async (nextConfig: AppConfig, sync = true) => {
@@ -311,33 +317,96 @@ function OptionsApp() {
   }, [config, persistConfig, selectedId]);
 
   if (!config) {
-    return <main className="shell"><p>{status}</p></main>;
+    return (
+      <main className="grid min-h-screen place-items-center bg-console-bg p-6">
+        <Panel className="max-w-md text-center">
+          <p className="text-sm text-console-subtle" aria-live="polite">{status}</p>
+        </Panel>
+      </main>
+    );
   }
 
   return (
-    <main className="shell">
-      {dashboardStatus && (
-        <BridgeStatusBar
-          status={status}
-          dashboard={dashboardStatus}
-          doctorReport={doctorReport}
-          onTestBridge={() => void testBridge()}
-          onRunDoctor={() => void runDoctor().catch((error) => setStatus(error instanceof Error ? error.message : "Bridge 自检失败"))}
-          onSync={() => void syncNow()}
-          onOpenBridgeSettings={() => setBridgeSettingsOpen(true)}
-          onOpenConfigTools={() => setConfigToolsOpen(true)}
-        />
-      )}
+    <main className="min-h-screen bg-console-bg p-4 md:p-6">
+      <div className="mx-auto grid max-w-[1440px] gap-4 lg:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[236px_minmax(0,1fr)_352px]">
+        {dashboardStatus && (
+          <BridgeStatusBar
+            status={status}
+            dashboard={dashboardStatus}
+            doctorReport={doctorReport}
+            onTestBridge={() => void testBridge()}
+            onRunDoctor={() => void runDoctor().catch((error) => setStatus(error instanceof Error ? error.message : "Bridge 自检失败"))}
+            onSync={() => void syncNow()}
+            onOpenBridgeSettings={() => setBridgeSettingsOpen(true)}
+            onOpenConfigTools={() => setConfigToolsOpen(true)}
+          />
+        )}
 
-      {config.profiles.length === 0 && !wizardOpen && (
-        <section className="empty-state">
-          <strong>创建第一个本地 AI 代理</strong>
-          <p>推荐从复制线上 API 的 cURL 开始，按“检查 Bridge → 粘贴 cURL → 选择 AI → 测试 → 保存”完成闭环。</p>
-          <button type="button" onClick={() => setWizardOpen(true)}>创建代理</button>
-        </section>
-      )}
+        <section className="grid min-w-0 content-start gap-4">
+          <Panel className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+            <div className="min-w-0">
+              <h1 className="text-[22px] font-bold leading-tight text-console-strong">本地 AI 代理控制台</h1>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-console-subtle" aria-live="polite">{status}</p>
+            </div>
+            <div className="flex flex-wrap justify-start gap-2 sm:justify-end">
+              <Button type="button" icon={<Plus size={16} aria-hidden="true" />} onClick={() => setWizardOpen(true)}>创建代理</Button>
+              <Button type="button" variant="secondary" icon={<RotateCw size={16} aria-hidden="true" />} onClick={() => void syncNow()}>
+                同步
+              </Button>
+            </div>
+          </Panel>
 
-      <section className="console-layout">
+          {dashboardStatus && (
+            <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4" aria-label="代理控制台状态">
+              <Panel as="article" className={dashboardStatus.bridgeState === "online" ? "border-[rgba(22,130,85,0.35)] bg-console-success-soft" : "border-[rgba(184,50,50,0.35)] bg-console-danger-soft"}>
+                <span className="text-xs font-semibold text-console-subtle">Bridge</span>
+                <strong className="mt-1 block truncate text-lg text-console-strong">{dashboardStatus.bridgeLabel}</strong>
+                <small className="mt-1 block truncate text-xs text-console-subtle">{dashboardStatus.bridgeVersionLabel || "未获取版本"}</small>
+              </Panel>
+              <Panel as="article">
+                <span className="text-xs font-semibold text-console-subtle">同步状态</span>
+                <strong className="mt-1 block truncate text-lg text-console-strong">{status}</strong>
+                <small className="mt-1 block truncate text-xs text-console-subtle">扩展、DNR 与 Bridge</small>
+              </Panel>
+              <Panel as="article">
+                <span className="text-xs font-semibold text-console-subtle">启用 Profile</span>
+                <strong className="mt-1 block truncate text-lg text-console-strong">{dashboardStatus.enabledProfileCount}/{dashboardStatus.profileCount}</strong>
+                <small className="mt-1 block truncate text-xs text-console-subtle">当前代理规则</small>
+              </Panel>
+              <Panel as="article" className={dashboardStatus.failedRequestCount > 0 ? "border-[rgba(184,50,50,0.35)] bg-console-danger-soft" : "border-[rgba(22,130,85,0.35)] bg-console-success-soft"}>
+                <span className="text-xs font-semibold text-console-subtle">最近失败</span>
+                <strong className="mt-1 block truncate text-lg text-console-strong">{dashboardStatus.failedRequestCount}</strong>
+                <small className="mt-1 block truncate text-xs text-console-subtle">来自诊断台</small>
+              </Panel>
+            </section>
+          )}
+
+          <Panel className="grid gap-4">
+            <div className="grid gap-1">
+              <h2 className="text-base font-bold text-console-strong">请求链路健康度</h2>
+              <p className="text-sm leading-6 text-console-subtle">把代理故障拆成可定位阶段，避免只看到笼统的请求失败。</p>
+            </div>
+            <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6" aria-label="代理链路阶段">
+              {proxyChainSteps.map((item) => (
+                <article key={item.id} className={item.state === "ok" ? "grid gap-2 rounded-console-sm border border-[rgba(22,130,85,0.28)] bg-console-success-soft p-3" : item.state === "warning" ? "grid gap-2 rounded-console-sm border border-[rgba(166,101,0,0.3)] bg-console-warning-soft p-3" : "grid gap-2 rounded-console-sm border border-console-border bg-console-muted p-3"}>
+                  <StatusDot tone={item.state === "ok" ? "success" : item.state === "warning" ? "warning" : "default"} />
+                  <strong className="truncate text-xs text-console-strong">{item.label}</strong>
+                  <small className="truncate text-xs text-console-subtle">{item.detail}</small>
+                </article>
+              ))}
+            </div>
+          </Panel>
+
+          {config.profiles.length === 0 && !wizardOpen && (
+            <Panel className="grid gap-3 border-[rgba(35,105,168,0.26)] bg-console-info-soft sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+              <div>
+                <strong className="text-sm text-console-strong">创建第一个本地 AI 代理</strong>
+                <p className="mt-1 text-sm leading-6 text-console-subtle">推荐从复制线上 API 的 cURL 开始，按“检查 Bridge → 粘贴 cURL → 选择 AI → 测试 → 保存”完成闭环。</p>
+              </div>
+              <Button type="button" onClick={() => setWizardOpen(true)}>创建代理</Button>
+            </Panel>
+          )}
+
           <ProfileList
             profiles={config.profiles}
             selectedId={selectedId}
@@ -358,87 +427,98 @@ function OptionsApp() {
             onTestProvider={() => void testProvider()}
             testResult={providerTestResult}
           />
+        </section>
+
+        <aside className="grid min-w-0 content-start gap-4 lg:col-span-2 xl:col-span-1">
+          <Panel className="grid gap-3">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+              <div className="min-w-0">
+                <h2 className="text-base font-bold text-console-strong">所选规则</h2>
+                <p className="mt-1 truncate text-sm text-console-subtle">{selectedProfile ? `${selectedProfile.name} · ${selectedProfile.id}` : "尚未选择 Profile"}</p>
+              </div>
+              <Pill tone={selectedProfile?.enabled ? "success" : "default"}>{selectedProfile?.enabled ? "启用" : "未启用"}</Pill>
+            </div>
+            {selectedProfile ? (
+              <dl className="grid gap-2 text-sm">
+                <div className="grid grid-cols-[82px_minmax(0,1fr)] gap-2"><dt className="font-semibold text-console-subtle">命中条件</dt><dd className="truncate">{selectedProfile.methods.join(",")} {selectedProfile.targetPath}</dd></div>
+                <div className="grid grid-cols-[82px_minmax(0,1fr)] gap-2"><dt className="font-semibold text-console-subtle">Provider</dt><dd>{selectedProfile.provider}</dd></div>
+                <div className="grid grid-cols-[82px_minmax(0,1fr)] gap-2"><dt className="font-semibold text-console-subtle">响应协议</dt><dd>{selectedProfile.responseMode}</dd></div>
+                <div className="grid grid-cols-[82px_minmax(0,1fr)] gap-2"><dt className="font-semibold text-console-subtle">项目路径</dt><dd className="truncate">{selectedProfile.projectDir || "-"}</dd></div>
+              </dl>
+            ) : (
+              <p className="text-sm leading-6 text-console-subtle">从代理规则表选择一项后，这里会展示保存前后的关键摘要。</p>
+            )}
+          </Panel>
           <RecentRequestsPanel
             config={config}
             setStatus={setStatus}
             onItemsChange={setRecentDiagnostics}
           />
-      </section>
+        </aside>
+      </div>
 
       {bridgeSettingsOpen && (
-        <div className="modal-backdrop" role="presentation" onClick={() => setBridgeSettingsOpen(false)}>
-          <section className="modal" role="dialog" aria-modal="true" aria-label="Bridge 设置" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-title">
-              <h2>Bridge 设置</h2>
-              <button type="button" className="icon-button secondary" aria-label="关闭 Bridge 设置" onClick={() => setBridgeSettingsOpen(false)}>×</button>
-            </div>
-            <label>
-              Bridge 地址
+        <ModalShell title="Bridge 设置" onClose={() => setBridgeSettingsOpen(false)} closeLabel="关闭 Bridge 设置">
+          <div className="grid gap-4">
+            <Field label="Bridge 地址">
               <input
                 value={config.bridgeBaseUrl}
                 onChange={(event) => setConfig({ ...config, bridgeBaseUrl: event.target.value })}
               />
-            </label>
-            <label>
-              本地 Token
+            </Field>
+            <Field label="本地 Token">
               <input
                 value={config.token}
                 onChange={(event) => setConfig({ ...config, token: event.target.value })}
               />
-            </label>
-            <p className="risk-note">本地 Token 会用于扩展和 Bridge 通信；导出分享模板时不应包含真实 Token。</p>
-            <div className="actions">
-              <button type="button" onClick={() => void saveBridge().then(() => setBridgeSettingsOpen(false))}>保存 Bridge</button>
-              <button type="button" className="secondary" onClick={() => setBridgeSettingsOpen(false)}>取消</button>
+            </Field>
+            <p className="rounded-console border border-[rgba(166,101,0,0.3)] bg-console-warning-soft p-3 text-sm leading-6 text-console-subtle">本地 Token 会用于扩展和 Bridge 通信；导出分享模板时不应包含真实 Token。</p>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" onClick={() => void saveBridge().then(() => setBridgeSettingsOpen(false))}>保存 Bridge</Button>
+              <Button type="button" variant="secondary" onClick={() => setBridgeSettingsOpen(false)}>取消</Button>
             </div>
-          </section>
-        </div>
+          </div>
+        </ModalShell>
       )}
 
       {configToolsOpen && (
-        <div className="modal-backdrop" role="presentation" onClick={() => setConfigToolsOpen(false)}>
-          <section className="modal" role="dialog" aria-modal="true" aria-label="配置导入导出" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-title">
-              <h2>配置导入导出</h2>
-              <button type="button" className="icon-button secondary" aria-label="关闭导入导出" onClick={() => setConfigToolsOpen(false)}>×</button>
-            </div>
-            <p>用于备份、迁移到另一台电脑，或把规则模板分享给其他人。导入配置可能包含本地路径、命令参数和代理规则，请只导入可信文件。</p>
+        <ModalShell title="配置导入导出" onClose={() => setConfigToolsOpen(false)} closeLabel="关闭导入导出">
+          <div className="grid gap-4">
+            <p className="text-sm leading-6 text-console-subtle">用于备份、迁移到另一台电脑，或把规则模板分享给其他人。导入配置可能包含本地路径、命令参数和代理规则，请只导入可信文件。</p>
             <input
               ref={importInputRef}
-              className="visually-hidden"
+              className="sr-only"
               type="file"
               accept="application/json,.json"
               onChange={(event) => void importConfigFile(event)}
             />
-            <div className="actions">
-              <button type="button" className="secondary" onClick={() => importInputRef.current?.click()}>导入配置</button>
-              <button type="button" className="secondary" onClick={() => downloadConfig("backup")}>导出备份</button>
-              <button type="button" className="secondary" onClick={() => downloadConfig("template")}>导出模板</button>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" onClick={() => importInputRef.current?.click()}>导入配置</Button>
+              <Button type="button" variant="secondary" onClick={() => downloadConfig("backup")}>导出备份</Button>
+              <Button type="button" variant="secondary" onClick={() => downloadConfig("template")}>导出模板</Button>
             </div>
-          </section>
-        </div>
+          </div>
+        </ModalShell>
       )}
 
       {pathDialogOpen && (
-        <div className="modal-backdrop" role="presentation">
-          <section className="modal" role="dialog" aria-modal="true" aria-label="选择本地 AI 配置项目路径">
-            <h2>本地 AI 配置项目路径</h2>
-            <p>浏览器扩展不能读取文件夹的真实绝对路径，请粘贴 Claude/Codex 应该启动的项目目录。</p>
-            <label>
-              项目路径
+        <ModalShell title="本地 AI 配置项目路径" label="选择本地 AI 配置项目路径" onClose={() => setPathDialogOpen(false)} closeLabel="关闭路径选择">
+          <div className="grid gap-4">
+            <p className="text-sm leading-6 text-console-subtle">浏览器扩展不能读取文件夹的真实绝对路径，请粘贴 Claude/Codex 应该启动的项目目录。</p>
+            <Field label="项目路径">
               <input
                 autoFocus
                 value={pathDraft}
                 placeholder="C:/project/demoProject/proxy2LocalAI"
                 onChange={(event) => setPathDraft(event.target.value)}
               />
-            </label>
-            <div className="actions">
-              <button type="button" onClick={confirmPathDialog}>使用此路径</button>
-              <button type="button" className="secondary" onClick={() => setPathDialogOpen(false)}>取消</button>
+            </Field>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" onClick={confirmPathDialog}>使用此路径</Button>
+              <Button type="button" variant="secondary" onClick={() => setPathDialogOpen(false)}>取消</Button>
             </div>
-          </section>
-        </div>
+          </div>
+        </ModalShell>
       )}
 
       {wizardOpen && config && (

@@ -4,6 +4,7 @@ import {
   DEFAULT_SSE_DONE_EVENT,
   DEFAULT_SSE_EVENT_MAPPINGS,
   DEFAULT_TIMEOUT_MS,
+  BUILTIN_RESPONSE_TEMPLATES,
   getBuiltinResponseTemplate,
   normalizeProfile,
   parseCurlCommand,
@@ -12,6 +13,7 @@ import {
   type HttpMethod,
   type ProxyProfile,
   type ResponseMode,
+  type ResponseTemplate,
   type SetupMode,
   type SensitiveHeaderPolicy
 } from "@proxy2localai/shared";
@@ -230,6 +232,55 @@ export function getRecommendedTemplateId(responseMode: ResponseMode): string {
     default:
       return "openai_chat_json";
   }
+}
+
+export interface RecommendedTemplateCard {
+  id: string;
+  name: string;
+  responseMode: ResponseMode;
+  description: string;
+  examplePreview: string;
+  recommended: boolean;
+  recommendReason: string;
+}
+
+const TEMPLATE_ORDER = [
+  "openai_sse",
+  "openai_chat_json",
+  "business_code_data_message",
+  "generic_sse"
+];
+
+function getTemplateRecommendReason(template: ResponseTemplate, responseMode: ResponseMode): string {
+  if (template.id === getRecommendedTemplateId(responseMode)) {
+    switch (responseMode) {
+      case "stream":
+        return "当前返回类型为流式 SSE，推荐 OpenAI SSE 兼容模板。";
+      case "block":
+        return "当前返回类型为普通 JSON，推荐 OpenAI Chat JSON 模板。";
+      case "custom_json":
+        return "当前返回类型为自定义 JSON，推荐业务 JSON 模板。";
+      case "mapped_sse":
+        return "当前返回类型为映射 SSE，推荐通用 SSE 映射模板。";
+    }
+  }
+  return "可在目标接口需要该协议时手动选择。";
+}
+
+export function getRecommendedTemplateCards(responseMode: ResponseMode): RecommendedTemplateCard[] {
+  const recommendedId = getRecommendedTemplateId(responseMode);
+  return TEMPLATE_ORDER
+    .map((id) => BUILTIN_RESPONSE_TEMPLATES.find((template) => template.id === id))
+    .filter((template): template is ResponseTemplate => Boolean(template))
+    .map((template) => ({
+      id: template.id,
+      name: template.name,
+      responseMode: template.responseMode,
+      description: template.description,
+      examplePreview: template.examplePreview,
+      recommended: template.id === recommendedId,
+      recommendReason: getTemplateRecommendReason(template, responseMode)
+    }));
 }
 
 export function applyResponseModeToDraft(draft: ProfileDraft, responseMode: ResponseMode): ProfileDraft {
