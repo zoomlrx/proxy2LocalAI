@@ -1,5 +1,5 @@
 import React from "react";
-import { Plus, FlaskConical } from "lucide-react";
+import { Plus, PanelRightOpen } from "lucide-react";
 import type { ProxyProfile } from "@proxy2localai/shared";
 import { Button, Panel, Pill, ToggleSwitch, cx } from "../../ui/components";
 
@@ -7,6 +7,7 @@ interface ProfileListProps {
   profiles: ProxyProfile[];
   selectedId: string | null;
   onSelect: (profile: ProxyProfile) => void;
+  onEdit: (profile: ProxyProfile) => void;
   onAdd: () => void;
   onToggleEnabled: (profile: ProxyProfile) => void;
 }
@@ -21,13 +22,13 @@ function getResponseTone(responseMode: ProxyProfile["responseMode"]) {
   return "default" as const;
 }
 
-export function ProfileList({ profiles, selectedId, onSelect, onAdd, onToggleEnabled }: ProfileListProps) {
+export function ProfileList({ profiles, selectedId, onSelect, onEdit, onAdd, onToggleEnabled }: ProfileListProps) {
   return (
-    <Panel className="grid gap-4">
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+    <Panel padded={false} className="grid gap-3 p-3">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-1">
         <div className="min-w-0">
           <h2 className="text-base font-bold text-console-strong">代理规则</h2>
-          <p className="mt-1 text-sm leading-6 text-console-subtle">启停、选择和测试常用规则；完整字段在下方编辑区分层展开。</p>
+          <p className="mt-1 text-sm leading-6 text-console-subtle">启停、选择和测试常用规则；完整字段进入详情抽屉编辑。</p>
         </div>
         <Button type="button" icon={<Plus size={16} aria-hidden="true" />} onClick={onAdd}>
           新增
@@ -40,16 +41,16 @@ export function ProfileList({ profiles, selectedId, onSelect, onAdd, onToggleEna
           <p className="mt-1 text-sm leading-6 text-console-subtle">建议从创建向导开始，粘贴 cURL 后完成测试和保存。</p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-console-sm border border-console-border">
           <table className="w-full border-collapse text-left text-sm">
             <thead>
-              <tr className="border-b border-console-border text-xs font-bold text-console-subtle">
-                <th className="w-16 py-3 pr-3">状态</th>
-                <th className="min-w-48 py-3 pr-3">规则</th>
-                <th className="min-w-56 py-3 pr-3">目标接口</th>
-                <th className="py-3 pr-3">Provider</th>
-                <th className="py-3 pr-3">响应</th>
-                <th className="py-3 text-right">操作</th>
+              <tr className="border-b border-console-border bg-console-muted text-xs font-bold text-console-subtle">
+                <th className="w-14 py-2.5 pl-3 pr-2">状态</th>
+                <th className="min-w-44 py-2.5 pr-2">规则</th>
+                <th className="min-w-56 py-2.5 pr-2">目标接口</th>
+                <th className="py-2.5 pr-2">Provider</th>
+                <th className="py-2.5 pr-2">响应</th>
+                <th className="w-28 min-w-28 py-2.5 pl-2 pr-3 text-right">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -57,11 +58,11 @@ export function ProfileList({ profiles, selectedId, onSelect, onAdd, onToggleEna
                 <tr
                   key={profile.id}
                   className={cx(
-                    "border-b border-console-border align-middle last:border-b-0",
+                    "border-b border-console-border align-middle last:border-b-0 hover:bg-console-muted",
                     profile.id === selectedId && "bg-console-primary-soft shadow-[inset_3px_0_0_var(--color-console-primary)]"
                   )}
                 >
-                  <td className="py-3 pr-3">
+                  <td className="py-2.5 pl-3 pr-2">
                     <ToggleSwitch
                       checked={profile.enabled}
                       aria-label={`${profile.enabled ? "停用" : "启用"} ${profile.name}`}
@@ -71,7 +72,7 @@ export function ProfileList({ profiles, selectedId, onSelect, onAdd, onToggleEna
                       }}
                     />
                   </td>
-                  <td className="py-3 pr-3">
+                  <td className="py-2.5 pr-2">
                     <button
                       type="button"
                       className="grid min-w-0 gap-1 text-left"
@@ -81,7 +82,7 @@ export function ProfileList({ profiles, selectedId, onSelect, onAdd, onToggleEna
                       <span className="truncate font-mono text-xs text-console-subtle">{profile.id}</span>
                     </button>
                   </td>
-                  <td className="py-3 pr-3">
+                  <td className="py-2.5 pr-2">
                     <div className="flex min-w-0 items-center gap-2">
                       <span className="inline-flex min-w-11 justify-center rounded bg-[#edf1f4] px-1.5 py-1 font-mono text-xs font-bold text-[#25333b]">
                         {profile.methods.join(",")}
@@ -91,16 +92,16 @@ export function ProfileList({ profiles, selectedId, onSelect, onAdd, onToggleEna
                       </span>
                     </div>
                   </td>
-                  <td className="py-3 pr-3">
+                  <td className="py-2.5 pr-2">
                     <Pill tone="success">{profile.provider}</Pill>
                   </td>
-                  <td className="py-3 pr-3">
+                  <td className="py-2.5 pr-2">
                     <Pill tone={getResponseTone(profile.responseMode)}>{profile.responseMode}</Pill>
                   </td>
-                  <td className="py-3">
+                  <td className="w-28 min-w-28 py-2.5 pl-2 pr-3">
                     <div className="flex justify-end gap-2">
-                      <Button type="button" variant="secondary" size="sm" icon={<FlaskConical size={14} aria-hidden="true" />} onClick={() => onSelect(profile)}>
-                        编辑
+                      <Button type="button" variant="secondary" size="sm" className="whitespace-nowrap" icon={<PanelRightOpen size={14} aria-hidden="true" />} onClick={() => onEdit(profile)}>
+                        详情
                       </Button>
                     </div>
                   </td>

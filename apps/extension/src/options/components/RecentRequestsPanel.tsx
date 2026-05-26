@@ -84,7 +84,7 @@ export function RecentRequestsPanel({ config, setStatus, onItemsChange }: Recent
   }, [config, refresh, setStatus]);
 
   return (
-    <Panel className="grid gap-4 lg:sticky lg:top-5">
+    <Panel className="grid gap-4">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
         <div className="min-w-0">
           <h2 className="text-base font-bold text-console-strong">最近请求诊断台</h2>

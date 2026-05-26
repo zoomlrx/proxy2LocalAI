@@ -197,3 +197,41 @@ export function ModalShell({ title, label, className, children, onClose, closeLa
     </div>
   );
 }
+
+interface DrawerShellProps {
+  title: string;
+  label?: string;
+  className?: string;
+  children: React.ReactNode;
+  onClose: () => void;
+  closeLabel?: string;
+}
+
+export function DrawerShell({ title, label, className, children, onClose, closeLabel = "关闭详情" }: DrawerShellProps) {
+  return (
+    <div
+      className="fixed inset-0 z-50 grid h-[100dvh] max-h-[100dvh] overflow-hidden bg-[rgba(12,20,25,0.34)] p-0 sm:justify-items-end"
+      role="presentation"
+      onClick={onClose}
+    >
+      <section
+        className={cx(
+          "grid h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-[820px] grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-l border-console-border-strong bg-console-surface shadow-console",
+          className
+        )}
+        role="dialog"
+        aria-modal="true"
+        aria-label={label ?? title}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-console-border bg-console-surface px-5 py-4">
+          <h2 className="truncate text-base font-bold text-console-strong">{title}</h2>
+          <Button type="button" variant="ghost" size="icon" aria-label={closeLabel} onClick={onClose}>
+            <X size={17} aria-hidden="true" />
+          </Button>
+        </div>
+        <div className="min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-5">{children}</div>
+      </section>
+    </div>
+  );
+}

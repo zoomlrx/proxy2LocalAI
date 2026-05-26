@@ -4,7 +4,7 @@ import { inferResponseTemplateFromSample, type HttpMethod } from "@proxy2localai
 import type { ProfileDraft, ProfileSection } from "../profileForm";
 import { applyResponseModeToDraft, applyTemplateToDraft, getDefaultExpandedSections } from "../profileForm";
 import { ResponseTemplatePicker } from "./ResponseTemplatePicker";
-import { Button, Field, Panel, Pill, cx } from "../../ui/components";
+import { Button, Field, Panel, Pill, ToggleSwitch, cx } from "../../ui/components";
 
 const METHODS: HttpMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
@@ -53,6 +53,7 @@ export function ProfileEditor({
   onChangeDraft, onChangeCurlText, onFillFromCurl, onOpenPathDialog, onSave, onDelete,
   onTestProvider, testResult
 }: ProfileEditorProps) {
+  const isCreating = !selectedProfile;
   const [expandedSections, setExpandedSections] = useState<ProfileSection[]>(
     () => getDefaultExpandedSections(draft.setupMode)
   );
@@ -126,20 +127,22 @@ export function ProfileEditor({
           <Pill tone={draft.enabled ? "success" : "default"}>{draft.enabled ? "启用" : "停用"}</Pill>
         </div>
 
-        <div className="grid gap-3 rounded-console border border-console-border bg-console-muted p-3">
-          <Field label="粘贴 cURL 配置">
-            <textarea
-              value={curlText}
-              placeholder="curl 'https://api.example.com/v1/chat/completions' -X POST --data-raw '{...}'"
-              onChange={(event) => onChangeCurlText(event.target.value)}
-            />
-          </Field>
-          <div>
-            <Button type="button" variant="secondary" icon={<Wand2 size={16} aria-hidden="true" />} onClick={onFillFromCurl}>
-              从 cURL 填充
-            </Button>
+        {isCreating && (
+          <div className="grid gap-3 rounded-console border border-console-border bg-console-muted p-3">
+            <Field label="粘贴 cURL 配置">
+              <textarea
+                value={curlText}
+                placeholder="curl 'https://api.example.com/v1/chat/completions' -X POST --data-raw '{...}'"
+                onChange={(event) => onChangeCurlText(event.target.value)}
+              />
+            </Field>
+            <div>
+              <Button type="button" variant="secondary" icon={<Wand2 size={16} aria-hidden="true" />} onClick={onFillFromCurl}>
+                从 cURL 填充
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
       </Panel>
 
       <SectionToggle title="基础配置" hint="新用户默认只需要维护这些字段" expanded={isExpanded("basic")} onToggle={() => toggleSection("basic")} />
@@ -158,10 +161,19 @@ export function ProfileEditor({
             </Field>
           </div>
 
-          <label className="flex items-center gap-2 text-sm font-semibold text-console-text">
-            <input type="checkbox" checked={draft.enabled} onChange={(e) => onChangeDraft("enabled", e.target.checked)} />
-            启用此代理
-          </label>
+          <div className="grid gap-3 rounded-console-sm border border-console-border bg-console-surface p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+            <div className="min-w-0">
+              <strong className="block text-sm text-console-strong">启用此代理</strong>
+              <small className="mt-1 block text-xs leading-5 text-console-subtle">
+                关闭后会保留配置，但不会生成浏览器代理规则。
+              </small>
+            </div>
+            <ToggleSwitch
+              checked={draft.enabled}
+              aria-label={draft.enabled ? "停用此代理" : "启用此代理"}
+              onClick={() => onChangeDraft("enabled", !draft.enabled)}
+            />
+          </div>
 
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="目标地址">

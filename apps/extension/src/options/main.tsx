@@ -9,11 +9,11 @@ import {
   type RequestDiagnosticSummary
 } from "@proxy2localai/shared";
 import { applyDynamicRules } from "../lib/dnr";
-import { getBridgeDoctor, getBridgeHealth, testBridgeProvider, type BridgeDoctorReport, type BridgeHealth } from "../lib/bridgeApi";
+import { getBridgeDoctor, getBridgeHealth, getRecentDiagnostics, testBridgeProvider, type BridgeDoctorReport, type BridgeHealth } from "../lib/bridgeApi";
 import { requestProfilePermission } from "../lib/permissions";
 import { getChromeConfigStorage } from "../lib/storage";
 import { syncBridgeThenApplyRules } from "../lib/sync";
-import { Button, Field, ModalShell, Panel, Pill, StatusDot } from "../ui/components";
+import { Button, DrawerShell, Field, ModalShell, Panel, Pill, StatusDot } from "../ui/components";
 import {
   applyCurlToDraft,
   createBlankProfile,
@@ -28,8 +28,11 @@ import { ProfileEditor } from "./components/ProfileEditor";
 import { CreateProxyWizard } from "./components/CreateProxyWizard";
 import { RecentRequestsPanel } from "./components/RecentRequestsPanel";
 import { buildDashboardStatus, buildProxyChainSteps } from "./dashboardView";
+import { buildProfileInspectorView } from "./profileWorkspaceView";
 import { Plus, RotateCw } from "lucide-react";
 import "../ui.css";
+
+type ProfileDetailsTab = "config" | "requests";
 
 function OptionsApp() {
   const storage = useMemo(() => getChromeConfigStorage(), []);
@@ -44,6 +47,8 @@ function OptionsApp() {
   const [pathDialogOpen, setPathDialogOpen] = useState(false);
   const [pathDraft, setPathDraft] = useState("");
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [profileDetailsOpen, setProfileDetailsOpen] = useState(false);
+  const [profileDetailsTab, setProfileDetailsTab] = useState<ProfileDetailsTab>("config");
   const [bridgeSettingsOpen, setBridgeSettingsOpen] = useState(false);
   const [configToolsOpen, setConfigToolsOpen] = useState(false);
   const [recentDiagnostics, setRecentDiagnostics] = useState<RequestDiagnosticSummary[]>([]);
@@ -71,12 +76,35 @@ function OptionsApp() {
   }, [load]);
 
   useEffect(() => {
+    if (!config) {
+      return;
+    }
+    let cancelled = false;
+    void getRecentDiagnostics(config)
+      .then((result) => {
+        if (!cancelled) {
+          setRecentDiagnostics(result.items);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRecentDiagnostics([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [config]);
+
+  useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") {
         return;
       }
       if (pathDialogOpen) {
         setPathDialogOpen(false);
+      } else if (profileDetailsOpen) {
+        setProfileDetailsOpen(false);
       } else if (bridgeSettingsOpen) {
         setBridgeSettingsOpen(false);
       } else if (configToolsOpen) {
@@ -87,7 +115,7 @@ function OptionsApp() {
     };
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
-  }, [bridgeSettingsOpen, configToolsOpen, pathDialogOpen, wizardOpen]);
+  }, [bridgeSettingsOpen, configToolsOpen, pathDialogOpen, profileDetailsOpen, wizardOpen]);
 
   const selectedProfile = config?.profiles.find((profile) => profile.id === selectedId);
   const dashboardStatus = useMemo(
@@ -97,6 +125,10 @@ function OptionsApp() {
   const proxyChainSteps = useMemo(
     () => buildProxyChainSteps(health, recentDiagnostics),
     [health, recentDiagnostics]
+  );
+  const profileInspectorView = useMemo(
+    () => buildProfileInspectorView(selectedProfile),
+    [selectedProfile]
   );
 
   const persistConfig = useCallback(async (nextConfig: AppConfig, sync = true) => {
@@ -129,6 +161,13 @@ function OptionsApp() {
     setDraft(profileToDraft(profile));
   }, []);
 
+  const editProfile = useCallback((profile: ProxyProfile) => {
+    setSelectedId(profile.id);
+    setDraft(profileToDraft(profile));
+    setProfileDetailsTab("config");
+    setProfileDetailsOpen(true);
+  }, []);
+
   const addProfile = useCallback(() => {
     if (!config) return;
     if (config.profiles.length === 0) {
@@ -139,6 +178,8 @@ function OptionsApp() {
     setSelectedId(next.id);
     setDraft(next);
     setCurlText("");
+    setProfileDetailsTab("config");
+    setProfileDetailsOpen(true);
     setStatus("正在编辑新配置");
   }, [config, draft.projectDir]);
 
@@ -173,6 +214,7 @@ function OptionsApp() {
     const firstProfile = saved.profiles[0];
     setSelectedId(firstProfile?.id ?? null);
     setDraft(firstProfile ? profileToDraft(firstProfile) : createBlankProfile(draft.projectDir));
+    setProfileDetailsOpen(false);
   }, [config, draft.projectDir, persistConfig, selectedId]);
 
   const saveBridge = useCallback(async () => {
@@ -328,7 +370,7 @@ function OptionsApp() {
 
   return (
     <main className="min-h-screen bg-console-bg p-4 md:p-6">
-      <div className="mx-auto grid max-w-[1440px] gap-4 lg:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[236px_minmax(0,1fr)_352px]">
+      <div className="mx-auto grid max-w-[1440px] gap-4 lg:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[236px_minmax(0,1fr)]">
         {dashboardStatus && (
           <BridgeStatusBar
             status={status}
@@ -411,51 +453,91 @@ function OptionsApp() {
             profiles={config.profiles}
             selectedId={selectedId}
             onSelect={selectProfile}
+            onEdit={editProfile}
             onAdd={addProfile}
             onToggleEnabled={(profile) => void toggleProfileEnabled(profile).catch((error) => setStatus(error instanceof Error ? error.message : "切换失败"))}
           />
-          <ProfileEditor
-            draft={draft}
-            curlText={curlText}
-            selectedProfile={selectedProfile ?? null}
-            onChangeDraft={updateDraft}
-            onChangeCurlText={setCurlText}
-            onFillFromCurl={fillFromCurl}
-            onOpenPathDialog={openPathDialog}
-            onSave={() => void saveProfile().catch((error) => setStatus(error instanceof Error ? error.message : "保存失败"))}
-            onDelete={() => void deleteProfile()}
-            onTestProvider={() => void testProvider()}
-            testResult={providerTestResult}
-          />
         </section>
 
-        <aside className="grid min-w-0 content-start gap-4 lg:col-span-2 xl:col-span-1">
-          <Panel className="grid gap-3">
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-              <div className="min-w-0">
-                <h2 className="text-base font-bold text-console-strong">所选规则</h2>
-                <p className="mt-1 truncate text-sm text-console-subtle">{selectedProfile ? `${selectedProfile.name} · ${selectedProfile.id}` : "尚未选择 Profile"}</p>
-              </div>
-              <Pill tone={selectedProfile?.enabled ? "success" : "default"}>{selectedProfile?.enabled ? "启用" : "未启用"}</Pill>
-            </div>
-            {selectedProfile ? (
-              <dl className="grid gap-2 text-sm">
-                <div className="grid grid-cols-[82px_minmax(0,1fr)] gap-2"><dt className="font-semibold text-console-subtle">命中条件</dt><dd className="truncate">{selectedProfile.methods.join(",")} {selectedProfile.targetPath}</dd></div>
-                <div className="grid grid-cols-[82px_minmax(0,1fr)] gap-2"><dt className="font-semibold text-console-subtle">Provider</dt><dd>{selectedProfile.provider}</dd></div>
-                <div className="grid grid-cols-[82px_minmax(0,1fr)] gap-2"><dt className="font-semibold text-console-subtle">响应协议</dt><dd>{selectedProfile.responseMode}</dd></div>
-                <div className="grid grid-cols-[82px_minmax(0,1fr)] gap-2"><dt className="font-semibold text-console-subtle">项目路径</dt><dd className="truncate">{selectedProfile.projectDir || "-"}</dd></div>
-              </dl>
-            ) : (
-              <p className="text-sm leading-6 text-console-subtle">从代理规则表选择一项后，这里会展示保存前后的关键摘要。</p>
-            )}
-          </Panel>
-          <RecentRequestsPanel
-            config={config}
-            setStatus={setStatus}
-            onItemsChange={setRecentDiagnostics}
-          />
-        </aside>
       </div>
+
+      {profileDetailsOpen && (
+        <DrawerShell
+          title={selectedProfile ? profileInspectorView.drawerTitle : "新建代理详情"}
+          label="代理配置详情"
+          onClose={() => setProfileDetailsOpen(false)}
+          closeLabel="关闭代理配置详情"
+        >
+          <div className="grid gap-4">
+            <Panel className="grid gap-3">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+                <div className="min-w-0">
+                  <h2 className="truncate text-base font-bold text-console-strong">{selectedProfile ? profileInspectorView.title : draft.name || "新建代理"}</h2>
+                  <p className="mt-1 truncate text-sm text-console-subtle">{selectedProfile ? profileInspectorView.subtitle : draft.id}</p>
+                </div>
+                <Pill tone={draft.enabled ? "success" : "default"}>{draft.enabled ? "启用" : "停用"}</Pill>
+              </div>
+              {selectedProfile ? (
+                <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                  {profileInspectorView.summary.map((item) => (
+                    <div key={item.label} className="grid min-w-0 grid-cols-[86px_minmax(0,1fr)] gap-2">
+                      <dt className="font-semibold text-console-subtle">{item.label}</dt>
+                      <dd className="truncate" title={item.value}>{item.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : (
+                <p className="text-sm leading-6 text-console-subtle">新增配置时可先粘贴 cURL 自动填充基础字段，保存后会生成对应代理规则。</p>
+              )}
+            </Panel>
+
+            {selectedProfile && (
+              <div className="inline-flex w-full gap-1 rounded-console border border-console-border bg-console-muted p-1" role="tablist" aria-label="代理详情内容">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={profileDetailsTab === "config"}
+                  className={profileDetailsTab === "config" ? "min-h-9 flex-1 rounded-console-sm border border-console-primary bg-console-surface px-3 text-sm font-bold text-console-strong shadow-sm" : "min-h-9 flex-1 rounded-console-sm border border-transparent px-3 text-sm font-semibold text-console-subtle hover:bg-console-raised"}
+                  onClick={() => setProfileDetailsTab("config")}
+                >
+                  配置详情
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={profileDetailsTab === "requests"}
+                  className={profileDetailsTab === "requests" ? "min-h-9 flex-1 rounded-console-sm border border-console-primary bg-console-surface px-3 text-sm font-bold text-console-strong shadow-sm" : "min-h-9 flex-1 rounded-console-sm border border-transparent px-3 text-sm font-semibold text-console-subtle hover:bg-console-raised"}
+                  onClick={() => setProfileDetailsTab("requests")}
+                >
+                  请求调用日志
+                </button>
+              </div>
+            )}
+
+            {profileDetailsTab === "requests" && selectedProfile ? (
+              <RecentRequestsPanel
+                config={config}
+                setStatus={setStatus}
+                onItemsChange={setRecentDiagnostics}
+              />
+            ) : (
+              <ProfileEditor
+                draft={draft}
+                curlText={curlText}
+                selectedProfile={selectedProfile ?? null}
+                onChangeDraft={updateDraft}
+                onChangeCurlText={setCurlText}
+                onFillFromCurl={fillFromCurl}
+                onOpenPathDialog={openPathDialog}
+                onSave={() => void saveProfile().catch((error) => setStatus(error instanceof Error ? error.message : "保存失败"))}
+                onDelete={() => void deleteProfile()}
+                onTestProvider={() => void testProvider()}
+                testResult={providerTestResult}
+              />
+            )}
+          </div>
+        </DrawerShell>
+      )}
 
       {bridgeSettingsOpen && (
         <ModalShell title="Bridge 设置" onClose={() => setBridgeSettingsOpen(false)} closeLabel="关闭 Bridge 设置">
