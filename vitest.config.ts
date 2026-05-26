@@ -11,7 +11,8 @@ export default defineConfig({
     include: [
       "packages/**/*.test.ts",
       "apps/**/*.test.ts",
-      "apps/**/*.spec.ts"
+      "apps/**/*.spec.ts",
+      "scripts/**/*.test.ts"
     ]
   },
   resolve: {

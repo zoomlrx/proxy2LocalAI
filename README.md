@@ -6,6 +6,38 @@ Proxy2LocalAI 是一个 Chrome/Edge MV3 浏览器扩展与本地 Bridge 服务�
 
 ![Proxy2LocalAI demo 聊天页](docs/assets/demo-chat.png)
 
+## 配置界面截图
+
+### 控制台总览
+
+展示 Bridge 状态、同步状态、启用 profile 数量、请求链路健康度和当前代理规则。
+
+![Proxy2LocalAI 配置控制台总览](docs/assets/config-overview.png)
+
+### 代理配置详情
+
+每个 profile 的命中条件、Provider、响应协议、项目路径和基础字段都集中在右侧详情抽屉中编辑。
+
+![Proxy2LocalAI 代理配置详情](docs/assets/config-profile-editor.png)
+
+### 创建代理向导
+
+新用户可以按“检查 Bridge → 粘贴 cURL → 选择 Provider → 项目路径 → 返回格式 → 测试并保存”的步骤创建第一条代理。
+
+![Proxy2LocalAI 创建代理向导](docs/assets/config-create-wizard.png)
+
+### Bridge 设置
+
+Bridge 地址和本地 token 独立管理，方便在不同机器、不同端口或发布包环境下迁移。
+
+![Proxy2LocalAI Bridge 设置](docs/assets/config-bridge-settings.png)
+
+### 配置导入导出
+
+支持导入配置、导出本机备份和导出分享模板；分享模板会避免携带真实 token。
+
+![Proxy2LocalAI 配置导入导出](docs/assets/config-import-export.png)
+
 ## 功能亮点
 
 - 只代理启用 profile 中声明的目标域名、路径和 HTTP 方法。
