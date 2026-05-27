@@ -12,6 +12,7 @@ const baseProfile: ProxyProfile = {
   projectDir: "C:/project",
   provider: "claude",
   responseMode: "stream",
+  messageReturnStructure: "anthropic_messages",
   allowDangerousCli: false,
   enableConversationMemory: false,
   timeoutMs: 0,
@@ -65,6 +66,25 @@ describe("内置响应模板", () => {
 
   test("不存在的模板返回 undefined", () => {
     expect(getBuiltinResponseTemplate("nonexistent")).toBeUndefined();
+  });
+});
+
+describe("stream mapping response templates", () => {
+  test("内置业务流式 SSE 模板写入 streamMappings 和 streamDoneEvent", () => {
+    const template = getBuiltinResponseTemplate("business_stream_sse");
+    expect(template).toBeDefined();
+    const profile = applyResponseTemplateToProfile(baseProfile, template!);
+
+    expect(profile.responseMode).toBe("mapped_sse");
+    expect(profile.streamMappings?.[0]).toMatchObject({
+      id: "chat",
+      match: { kind: "delta", channel: "message" },
+      emit: { event: "chat" }
+    });
+    expect(profile.streamDoneEvent).toEqual({
+      event: "finish",
+      data: { code: 0, data: { status: "completed" }, message: "done" }
+    });
   });
 });
 

@@ -12,6 +12,7 @@ const profile: ProxyProfile = {
   projectDir: "C:\\project\\demoProject\\testVs",
   provider: "claude",
   responseMode: "mapped_sse",
+  messageReturnStructure: "anthropic_messages",
   allowDangerousCli: false,
   enableConversationMemory: false,
   timeoutMs: 0,

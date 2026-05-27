@@ -3,6 +3,11 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { dirname, join } from "node:path";
 import {
   composePrompt,
+  createMessageProtocolJsonResponse,
+  createMessageProtocolPromptPayload,
+  createMessageProtocolStreamChunk,
+  createMessageProtocolStreamDone,
+  createMessageProtocolStreamStart,
   createChatCompletion,
   createErrorResponse,
   createStreamChunk,
@@ -10,13 +15,22 @@ import {
   DEFAULT_SSE_DONE_EVENT,
   DEFAULT_SSE_EVENT_MAPPINGS,
   DEFAULT_LOCAL_TOKEN,
+  DEFAULT_RENDER_STREAM_MAPPING_OPTIONS,
+  DEFAULT_STREAM_DONE_POLICY,
+  DEFAULT_TOOL_EVENT_POLICY,
   extractAiData,
   extractPromptContext,
+  legacySseMappingsToStreamMappings,
   normalizeProfiles,
   redactDiagnosticText,
+  renderStreamMappingFramesForEvent,
   renderCustomJsonTemplate,
+  sanitizeStreamEventForMapping,
+  serializeSseFrame,
   validateCustomJsonTemplate,
   type ConversationTurn,
+  type RenderStreamMappingOptions,
+  type NormalizedStreamEvent,
   type ProxyProfile
 } from "@proxy2localai/shared";
 import {
@@ -24,6 +38,7 @@ import {
   createProviderLogger,
   setProviderLogger,
   type AiProviderAdapter,
+  type LegacyProviderStreamEvent,
   type ProviderRunContext,
   type ProviderRegistry,
   type ProviderStreamEvent
@@ -350,7 +365,8 @@ async function handleRequest(
     trackClientAbort(req, context.requestsLogPath, profile);
 
     const parameters = await buildRequestParameters(req, url, profile);
-    const conversationKey = createConversationKey(profile, parameters);
+    const routedParameters = routeRequestParametersForProfile(parameters, profile);
+    const conversationKey = createConversationKey(profile, routedParameters);
     const conversationHistory = profile.enableConversationMemory
       ? context.conversationHistories.get(conversationKey) ?? []
       : [];
@@ -359,8 +375,8 @@ async function handleRequest(
       contextRegexFlags: profile.contextRegexFlags,
       conversationHistory
     };
-    const userContext = extractPromptContext(parameters, promptOptions);
-    const prompt = composePrompt(parameters, profile.prompt, promptOptions);
+    const userContext = extractPromptContext(routedParameters, promptOptions);
+    const prompt = composePrompt(routedParameters, profile.prompt, promptOptions);
     const provider = context.providers[profile.provider] as AiProviderAdapter | undefined;
     if (!provider) {
       context.diagnostics.addStage(diagRequestId, { id: "provider_error", status: "error", message: `未找到 provider: ${profile.provider}` });
@@ -410,10 +426,7 @@ async function handleRequest(
         responseMode: profile.responseMode,
         outputChars: content.length
       });
-      sendJson(res, 200, createChatCompletion({
-        content,
-        model: `local-${profile.provider}`
-      }));
+      sendJson(res, 200, createBlockResponseBody(profile, content));
       context.diagnostics.addStage(diagRequestId, { id: "response_done", status: "ok" });
       context.diagnostics.finishRequest(diagRequestId, { status: "ok" });
       return;
@@ -520,6 +533,10 @@ function logRequestEvent(logPath: string, event: Record<string, unknown>): void 
 
 function createStatusEvent(event: Record<string, unknown>): string {
   return `event: proxy_status\ndata: ${JSON.stringify(event)}\n\n`;
+}
+
+function createLocalResponseId(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function createProviderStatusEvent(profile: ProxyProfile, event: Record<string, unknown>): Record<string, unknown> {
@@ -713,6 +730,46 @@ async function buildRequestParameters(req: IncomingMessage, url: URL, profile: P
   };
 }
 
+function routeRequestParametersForProfile(parameters: RequestParameters, profile: ProxyProfile): RequestParameters {
+  const routed = createMessageProtocolPromptPayload({
+    structure: profile.messageReturnStructure,
+    targetPath: parameters.target.path,
+    body: parameters.request.body
+  });
+  if (routed.messages.length === 0) {
+    return parameters;
+  }
+  return {
+    ...parameters,
+    request: {
+      ...parameters.request,
+      body: {
+        ...routed,
+        originalBody: parameters.request.body
+      }
+    }
+  };
+}
+
+function shouldUseProtocolResponse(profile: ProxyProfile): boolean {
+  return Boolean(profile.messageReturnStructure);
+}
+
+function createBlockResponseBody(profile: ProxyProfile, content: string): unknown {
+  const model = `local-${profile.provider}`;
+  if (!shouldUseProtocolResponse(profile)) {
+    return createChatCompletion({
+      content,
+      model
+    });
+  }
+  return createMessageProtocolJsonResponse({
+    structure: profile.messageReturnStructure,
+    content,
+    model
+  });
+}
+
 function extractPageContext(headers: IncomingMessage["headers"]): RequestParameters["page"] {
   const candidates: Array<{ source: RequestParameters["page"]["source"]; value: string | undefined }> = [
     { source: "x-proxy2localai-page-url", value: firstHeaderValue(headers["x-proxy2localai-page-url"]) },
@@ -777,6 +834,11 @@ async function streamResponse(
   conversationKey: string,
   userContext: string
 ): Promise<void> {
+  if (shouldUseProtocolResponse(profile)) {
+    await protocolStreamResponse(res, profile, provider, prompt, requestsLogPath, conversationHistories, conversationKey, userContext);
+    return;
+  }
+
   res.writeHead(200, {
     "content-type": "text/event-stream; charset=utf-8",
     "cache-control": "no-cache, no-transform",
@@ -865,6 +927,132 @@ async function streamResponse(
   }
 }
 
+async function protocolStreamResponse(
+  res: ServerResponse,
+  profile: ProxyProfile,
+  provider: AiProviderAdapter,
+  prompt: string,
+  requestsLogPath: string,
+  conversationHistories: Map<string, ConversationTurn[]>,
+  conversationKey: string,
+  userContext: string
+): Promise<void> {
+  res.writeHead(200, {
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-cache, no-transform",
+    connection: "keep-alive"
+  });
+  logRequestEvent(requestsLogPath, {
+    stage: "response_headers_sent",
+    profileId: profile.id,
+    provider: profile.provider,
+    responseMode: profile.responseMode,
+    messageReturnStructure: profile.messageReturnStructure,
+    contentType: "text/event-stream; charset=utf-8"
+  });
+
+  const model = `local-${profile.provider}`;
+  const responseId = createLocalResponseId(profile.messageReturnStructure === "openai_responses"
+    ? "resp"
+    : profile.messageReturnStructure === "anthropic_messages"
+      ? "msg"
+      : "chatcmpl");
+  const itemId = createLocalResponseId("msg");
+  let assistantContent = "";
+  let chunkCount = 0;
+
+  try {
+    logRequestEvent(requestsLogPath, {
+      stage: "provider_start",
+      profileId: profile.id,
+      provider: profile.provider,
+      responseMode: profile.responseMode,
+      messageReturnStructure: profile.messageReturnStructure
+    });
+    res.write(createMessageProtocolStreamStart({
+      structure: profile.messageReturnStructure,
+      model,
+      id: responseId,
+      itemId
+    }));
+
+    const providerContext: ProviderRunContext = {
+      onEvent(event) {
+        const providerStatus = createProviderStatusEvent(profile, event);
+        logRequestEvent(requestsLogPath, {
+          ...providerStatus,
+          stage: "provider_status",
+          messageReturnStructure: profile.messageReturnStructure,
+          providerStage: providerStatus.stage
+        });
+      }
+    };
+
+    for await (const content of provider.streamText(profile, prompt, providerContext)) {
+      chunkCount += 1;
+      assistantContent += content;
+      res.write(createMessageProtocolStreamChunk({
+        structure: profile.messageReturnStructure,
+        content,
+        model,
+        id: responseId,
+        itemId
+      }));
+      logRequestEvent(requestsLogPath, {
+        stage: "response_chunk_written",
+        profileId: profile.id,
+        provider: profile.provider,
+        responseMode: profile.responseMode,
+        messageReturnStructure: profile.messageReturnStructure,
+        chunkIndex: chunkCount,
+        chunkChars: content.length
+      });
+    }
+
+    rememberConversation(conversationHistories, profile, conversationKey, userContext, assistantContent);
+    res.write(createMessageProtocolStreamDone({
+      structure: profile.messageReturnStructure,
+      content: assistantContent,
+      model,
+      id: responseId,
+      itemId
+    }));
+    logRequestEvent(requestsLogPath, {
+      stage: "response_done_written",
+      profileId: profile.id,
+      provider: profile.provider,
+      responseMode: profile.responseMode,
+      messageReturnStructure: profile.messageReturnStructure,
+      chunkCount
+    });
+    res.end();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "未知错误";
+    logRequestEvent(requestsLogPath, {
+      stage: "provider_error",
+      profileId: profile.id,
+      provider: profile.provider,
+      responseMode: profile.responseMode,
+      message
+    });
+    res.write(createMessageProtocolStreamChunk({
+      structure: profile.messageReturnStructure,
+      content: `错误: ${message}`,
+      model,
+      id: responseId,
+      itemId
+    }));
+    res.write(createMessageProtocolStreamDone({
+      structure: profile.messageReturnStructure,
+      content: assistantContent,
+      model,
+      id: responseId,
+      itemId
+    }));
+    res.end();
+  }
+}
+
 function trackClientAbort(req: IncomingMessage, logPath: string, profile: ProxyProfile): void {
   req.on("aborted", () => {
     logRequestEvent(logPath, {
@@ -919,6 +1107,140 @@ function sendRawJson(res: ServerResponse, status: number, body: string): void {
   res.end(body);
 }
 
+async function mappedSseResponseV2(
+  res: ServerResponse,
+  profile: ProxyProfile,
+  provider: AiProviderAdapter,
+  prompt: string,
+  requestsLogPath: string,
+  conversationHistories: Map<string, ConversationTurn[]>,
+  conversationKey: string,
+  userContext: string
+): Promise<void> {
+  res.writeHead(200, {
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-cache, no-transform",
+    connection: "keep-alive"
+  });
+  logRequestEvent(requestsLogPath, {
+    stage: "response_headers_sent",
+    profileId: profile.id,
+    provider: profile.provider,
+    responseMode: profile.responseMode,
+    contentType: "text/event-stream; charset=utf-8"
+  });
+
+  const doneEvent = profile.streamDoneEvent ?? {
+    event: (profile.sseDoneEvent ?? DEFAULT_SSE_DONE_EVENT).targetEvent,
+    data: (profile.sseDoneEvent ?? DEFAULT_SSE_DONE_EVENT).data
+  };
+  const rendererErrorPolicy: RenderStreamMappingOptions["rendererErrorPolicy"] = profile.streamDonePolicy?.onRendererError === "emit_error"
+    ? "emit_error"
+    : profile.streamDonePolicy?.onRendererError === "fail_stream"
+      ? "throw"
+      : "drop_frame";
+  const renderOptions: RenderStreamMappingOptions = {
+    ...DEFAULT_RENDER_STREAM_MAPPING_OPTIONS,
+    rendererErrorPolicy,
+    securityPolicy: profile.mappingSecurityPolicy ?? DEFAULT_RENDER_STREAM_MAPPING_OPTIONS.securityPolicy
+  };
+
+  try {
+    logRequestEvent(requestsLogPath, {
+      stage: "provider_start",
+      profileId: profile.id,
+      provider: profile.provider,
+      responseMode: profile.responseMode
+    });
+    let chunkCount = 0;
+    let assistantContent = "";
+    for await (const event of streamNormalizedProviderEvents(provider, profile, prompt)) {
+      const sanitized = sanitizeStreamEventForMapping(event, profile.toolEventPolicy);
+      if (!sanitized) {
+        continue;
+      }
+      if (sanitized.kind === "delta" && sanitized.channel === "message" && sanitized.content) {
+        assistantContent += sanitized.content;
+      }
+      const frames = renderStreamMappingFramesForEvent(sanitized, profile.streamMappings ?? [], renderOptions);
+      for (const frame of frames) {
+        chunkCount += 1;
+        res.write(frame.frame);
+        logRequestEvent(requestsLogPath, {
+          stage: "response_chunk_written",
+          profileId: profile.id,
+          provider: profile.provider,
+          responseMode: profile.responseMode,
+          sourceEvent: `${sanitized.kind}/${sanitized.channel}`,
+          targetEvent: frame.event,
+          chunkIndex: chunkCount,
+          chunkChars: frame.frame.length
+        });
+      }
+    }
+    rememberConversation(conversationHistories, profile, conversationKey, userContext, assistantContent);
+    if (profile.streamDonePolicy?.onProviderDone !== "none") {
+      res.write(serializeSseFrame(doneEvent.event, JSON.stringify(doneEvent.data)));
+    }
+    logRequestEvent(requestsLogPath, {
+      stage: "response_done_written",
+      profileId: profile.id,
+      provider: profile.provider,
+      responseMode: profile.responseMode,
+      chunkCount,
+      targetEvent: doneEvent.event
+    });
+    res.end();
+  } catch (error) {
+    logRequestEvent(requestsLogPath, {
+      stage: "provider_error",
+      profileId: profile.id,
+      provider: profile.provider,
+      responseMode: profile.responseMode,
+      message: error instanceof Error ? error.message : "unknown error"
+    });
+    res.write(serializeSseFrame("error", JSON.stringify({
+      message: error instanceof Error ? error.message : "unknown error"
+    })));
+    if (profile.streamDonePolicy?.onProviderError !== "none") {
+      res.write(serializeSseFrame(doneEvent.event, JSON.stringify({
+        ...(typeof doneEvent.data === "object" && doneEvent.data !== null && !Array.isArray(doneEvent.data)
+          ? doneEvent.data as Record<string, unknown>
+          : {}),
+        status: "failed"
+      })));
+    }
+    res.end();
+  }
+}
+
+function shouldUseMappedSseV2(profile: ProxyProfile): boolean {
+  const streamMappings = profile.streamMappings ?? [];
+  if (streamMappings.length === 0) {
+    return false;
+  }
+
+  const legacyMappings = legacySseMappingsToStreamMappings(profile.sseEventMappings ?? DEFAULT_SSE_EVENT_MAPPINGS);
+  const legacyDoneEvent = profile.sseDoneEvent ?? DEFAULT_SSE_DONE_EVENT;
+  const legacyStreamDoneEvent = {
+    event: legacyDoneEvent.targetEvent,
+    data: legacyDoneEvent.data
+  };
+  const streamDoneEvent = profile.streamDoneEvent ?? legacyStreamDoneEvent;
+  const hasCustomV2Policy =
+    stableJson(profile.toolEventPolicy ?? DEFAULT_TOOL_EVENT_POLICY) !== stableJson(DEFAULT_TOOL_EVENT_POLICY)
+    || stableJson(profile.mappingSecurityPolicy ?? DEFAULT_RENDER_STREAM_MAPPING_OPTIONS.securityPolicy) !== stableJson(DEFAULT_RENDER_STREAM_MAPPING_OPTIONS.securityPolicy)
+    || stableJson(profile.streamDonePolicy ?? DEFAULT_STREAM_DONE_POLICY) !== stableJson(DEFAULT_STREAM_DONE_POLICY);
+
+  const isUnmodifiedLegacyMappings = stableJson(streamMappings) === stableJson(legacyMappings);
+  const isUnmodifiedLegacyDone = stableJson(streamDoneEvent) === stableJson(legacyStreamDoneEvent);
+  return hasCustomV2Policy || !(isUnmodifiedLegacyMappings && isUnmodifiedLegacyDone);
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(value);
+}
+
 async function mappedSseResponse(
   res: ServerResponse,
   profile: ProxyProfile,
@@ -929,6 +1251,11 @@ async function mappedSseResponse(
   conversationKey: string,
   userContext: string
 ): Promise<void> {
+  if (shouldUseMappedSseV2(profile)) {
+    await mappedSseResponseV2(res, profile, provider, prompt, requestsLogPath, conversationHistories, conversationKey, userContext);
+    return;
+  }
+
   res.writeHead(200, {
     "content-type": "text/event-stream; charset=utf-8",
     "cache-control": "no-cache, no-transform",
@@ -1003,13 +1330,45 @@ async function mappedSseResponse(
   }
 }
 
+async function* streamNormalizedProviderEvents(
+  provider: AiProviderAdapter,
+  profile: ProxyProfile,
+  prompt: string
+): AsyncIterable<NormalizedStreamEvent> {
+  let legacySequence = 0;
+  if (provider.streamEvents) {
+    for await (const event of provider.streamEvents(profile, prompt)) {
+      if (isLegacyProviderStreamEvent(event)) {
+        legacySequence += 1;
+        yield legacyProviderEventToNormalized(event, profile, legacySequence);
+      } else {
+        yield event;
+      }
+    }
+    return;
+  }
+  for await (const content of provider.streamText(profile, prompt)) {
+    legacySequence += 1;
+    yield legacyProviderEventToNormalized({ source: "message", content }, profile, legacySequence);
+  }
+}
+
 async function* streamProviderEvents(
   provider: AiProviderAdapter,
   profile: ProxyProfile,
   prompt: string
-): AsyncIterable<ProviderStreamEvent> {
+): AsyncIterable<LegacyProviderStreamEvent> {
   if (provider.streamEvents) {
-    yield* provider.streamEvents(profile, prompt);
+    for await (const event of provider.streamEvents(profile, prompt)) {
+      if (isLegacyProviderStreamEvent(event)) {
+        yield event;
+        continue;
+      }
+      const legacy = normalizedProviderEventToLegacy(event);
+      if (legacy) {
+        yield legacy;
+      }
+    }
     return;
   }
   for await (const content of provider.streamText(profile, prompt)) {
@@ -1026,4 +1385,43 @@ function createMappedSseTextEvent(event: string, content: string): string {
 
 function createMappedSseDataEvent(event: string, data: unknown): string {
   return `event:${event}\ndata:${JSON.stringify(data)}\n\n`;
+}
+
+function isLegacyProviderStreamEvent(event: ProviderStreamEvent): event is LegacyProviderStreamEvent {
+  return "source" in event;
+}
+
+function legacyProviderEventToNormalized(
+  event: LegacyProviderStreamEvent,
+  profile: ProxyProfile,
+  sequence: number
+): NormalizedStreamEvent {
+  return {
+    provider: profile.provider === "claude" || profile.provider === "codex" ? profile.provider : "custom",
+    eventId: `evt_${String(sequence).padStart(6, "0")}`,
+    sequence,
+    kind: event.source === "error" ? "error" : "delta",
+    channel: event.source === "reasoning" ? "reasoning" : event.source === "debug" ? "debug" : event.source === "status" || event.source === "error" ? "status" : "message",
+    content: event.content,
+    meta: { providerEventType: event.source }
+  };
+}
+
+function normalizedProviderEventToLegacy(event: NormalizedStreamEvent): LegacyProviderStreamEvent | null {
+  if (!event.content) {
+    return null;
+  }
+  if (event.channel === "reasoning") {
+    return { source: "reasoning", content: event.content };
+  }
+  if (event.channel === "debug") {
+    return { source: "debug", content: event.content };
+  }
+  if (event.kind === "error") {
+    return { source: "error", content: event.content };
+  }
+  if (event.channel === "status") {
+    return { source: "status", content: event.content };
+  }
+  return { source: "message", content: event.content };
 }

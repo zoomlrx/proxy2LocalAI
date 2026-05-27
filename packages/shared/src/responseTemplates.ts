@@ -1,3 +1,14 @@
+import type {
+  MappingSecurityPolicy,
+  StreamCodecId,
+  StreamDoneEvent,
+  StreamDonePolicy,
+  ToolEventPolicy
+} from "./streamEvents";
+import {
+  streamMappingsToLegacySseEventMappings,
+  type StreamMappingRule
+} from "./streamMapping";
 import type { ResponseMode, SseEventMapping, ProxyProfile } from "./profile";
 
 export interface ResponseTemplate {
@@ -8,6 +19,12 @@ export interface ResponseTemplate {
   customJsonTemplate?: string;
   sseEventMappings?: SseEventMapping[];
   sseDoneEvent?: { targetEvent: string; data: unknown };
+  streamCodec?: StreamCodecId;
+  streamMappings?: StreamMappingRule[];
+  streamDoneEvent?: StreamDoneEvent;
+  toolEventPolicy?: ToolEventPolicy;
+  mappingSecurityPolicy?: MappingSecurityPolicy;
+  streamDonePolicy?: StreamDonePolicy;
   sseDataEvents?: string[];
   examplePreview: string;
 }
@@ -48,18 +65,158 @@ export const BUILTIN_RESPONSE_TEMPLATES: ResponseTemplate[] = [
   }
 ];
 
+BUILTIN_RESPONSE_TEMPLATES.push(
+  {
+    id: "generic_chat_sse",
+    name: "通用聊天 SSE",
+    responseMode: "mapped_sse",
+    description: "只输出最终回答文本增量，适合目标接口只需要 answer/message 事件的场景。",
+    streamMappings: [
+      {
+        id: "message",
+        enabled: true,
+        match: { kind: "delta", channel: "message" },
+        emit: { protocol: "sse", event: "message", data: { content: "{{content}}" } }
+      }
+    ],
+    streamDoneEvent: {
+      event: "done",
+      data: { status: "completed" }
+    },
+    examplePreview: 'event: message\ndata: {"content":"你好"}\n\nevent: done\ndata: {"status":"completed"}'
+  },
+  {
+    id: "chat_reasoning_sse",
+    name: "带推理过程 SSE",
+    responseMode: "mapped_sse",
+    description: "区分 reasoning 和 message 两类文本增量，适合目标页面需要展示思考过程的场景。",
+    streamMappings: [
+      {
+        id: "reasoning",
+        enabled: true,
+        match: { kind: "delta", channel: "reasoning" },
+        emit: { protocol: "sse", event: "reasoning", data: { delta: "{{content}}" } }
+      },
+      {
+        id: "message",
+        enabled: true,
+        match: { kind: "delta", channel: "message" },
+        emit: { protocol: "sse", event: "message", data: { delta: "{{content}}" } }
+      }
+    ],
+    streamDoneEvent: {
+      event: "done",
+      data: { status: "completed" }
+    },
+    examplePreview: 'event: reasoning\ndata: {"delta":"先分析"}\n\nevent: message\ndata: {"delta":"你好"}'
+  },
+  {
+    id: "tool_status_sse",
+    name: "工具状态 SSE",
+    responseMode: "mapped_sse",
+    description: "输出工具 start/delta/end 状态，默认只返回脱敏后的工具信息。",
+    toolEventPolicy: {
+      enabled: true,
+      includeInput: "redacted",
+      includeOutput: "none",
+      redactPaths: true,
+      redactSecrets: true
+    },
+    streamMappings: [
+      {
+        id: "tool-start",
+        enabled: true,
+        match: { kind: "tool_call_start", channel: "tool" },
+        emit: {
+          protocol: "sse",
+          event: "tool",
+          data: { type: "tool.start", toolName: "{{tool.name}}", toolId: "{{tool.id}}" }
+        }
+      },
+      {
+        id: "tool-delta",
+        enabled: true,
+        match: { kind: "tool_call_delta", channel: "tool" },
+        emit: {
+          protocol: "sse",
+          event: "tool",
+          data: { type: "tool.input.delta", toolName: "{{tool.name}}", delta: "{{tool.inputDelta}}" }
+        }
+      },
+      {
+        id: "tool-end",
+        enabled: true,
+        match: { kind: "tool_call_end", channel: "tool" },
+        emit: {
+          protocol: "sse",
+          event: "tool",
+          data: { type: "tool.end", toolName: "{{tool.name}}", status: "{{tool.status}}" }
+        }
+      }
+    ],
+    streamDoneEvent: {
+      event: "done",
+      data: { status: "completed" }
+    },
+    examplePreview: 'event: tool\ndata: {"type":"tool.start","toolName":"Read","toolId":"toolu_1"}'
+  },
+  {
+    id: "business_stream_sse",
+    name: "业务流式 SSE",
+    responseMode: "mapped_sse",
+    description: "把文本和错误包装为 code/data/message 结构，适合已有业务流式协议。",
+    streamMappings: [
+      {
+        id: "chat",
+        enabled: true,
+        match: { kind: "delta", channel: "message" },
+        emit: {
+          protocol: "sse",
+          event: "chat",
+          data: { code: 0, data: { type: "answer.delta", content: "{{content}}" }, message: "ok" }
+        }
+      },
+      {
+        id: "error",
+        enabled: true,
+        match: { kind: "error" },
+        emit: {
+          protocol: "sse",
+          event: "error",
+          data: { code: 500, data: null, message: "{{content}}" }
+        }
+      }
+    ],
+    streamDoneEvent: {
+      event: "finish",
+      data: { code: 0, data: { status: "completed" }, message: "done" }
+    },
+    examplePreview: 'event: chat\ndata: {"code":0,"data":{"type":"answer.delta","content":"你好"},"message":"ok"}\n\nevent: finish\ndata: {"code":0,"data":{"status":"completed"},"message":"done"}'
+  }
+);
+
 export function getBuiltinResponseTemplate(id: string): ResponseTemplate | undefined {
   return BUILTIN_RESPONSE_TEMPLATES.find((template) => template.id === id);
 }
 
 export function applyResponseTemplateToProfile(profile: ProxyProfile, template: ResponseTemplate): ProxyProfile {
+  const legacyMappings = template.sseEventMappings
+    ?? (template.streamMappings ? streamMappingsToLegacySseEventMappings(template.streamMappings) : undefined);
   return {
     ...profile,
     responseTemplateId: template.id,
     responseMode: template.responseMode,
     ...(template.customJsonTemplate !== undefined && { customJsonTemplate: template.customJsonTemplate }),
-    ...(template.sseEventMappings !== undefined && { sseEventMappings: template.sseEventMappings }),
-    ...(template.sseDataEvents !== undefined && { sseDataEvents: template.sseDataEvents })
+    ...(legacyMappings !== undefined && { sseEventMappings: legacyMappings }),
+    ...(template.sseDoneEvent !== undefined && { sseDoneEvent: template.sseDoneEvent }),
+    ...(template.streamDoneEvent !== undefined && { sseDoneEvent: { targetEvent: template.streamDoneEvent.event, data: template.streamDoneEvent.data } }),
+    ...(template.sseDataEvents !== undefined && { sseDataEvents: template.sseDataEvents }),
+    ...(template.streamCodec !== undefined && { streamCodec: template.streamCodec }),
+    ...(template.streamMappings !== undefined && { streamMappings: template.streamMappings }),
+    ...(template.streamDoneEvent !== undefined && { streamDoneEvent: template.streamDoneEvent }),
+    ...(template.toolEventPolicy !== undefined && { toolEventPolicy: template.toolEventPolicy }),
+    ...(template.mappingSecurityPolicy !== undefined && { mappingSecurityPolicy: template.mappingSecurityPolicy }),
+    ...(template.streamDonePolicy !== undefined && { streamDonePolicy: template.streamDonePolicy })
   };
 }
 

@@ -150,4 +150,5 @@ npm run release
 - 用户可见行为变化要同步 `README.md`。
 - 安全边界、数据采集、日志和权限变化要同步 `SECURITY.md` 或 `PRIVACY.md`。
 - 设计规划建议放在 `docs/plans/`；如果需要进入版本控制，注意当前 `.gitignore` 可能忽略该目录下文件。
+- 当用户要求“输出设计方案”时，默认需要写入 Markdown 文件，优先放在 `docs/plans/YYYY-MM-DD-<topic>-design.md`，方便后续 AI 或开发者读取执行。
 - `CLAUDE.md` 只保留指向本文件的说明，不再维护重复内容。

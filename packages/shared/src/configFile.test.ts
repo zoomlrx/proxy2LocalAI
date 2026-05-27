@@ -21,6 +21,7 @@ const baseConfig: AppConfig = {
       projectDir: "C:/project/demoProject/proxy2LocalAI",
       provider: "claude",
       responseMode: "stream",
+      messageReturnStructure: "anthropic_messages",
       timeoutMs: 1000,
       maxBodyBytes: 2048,
       sseDataEvents: ["message"],

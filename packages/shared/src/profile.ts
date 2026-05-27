@@ -1,3 +1,35 @@
+import {
+  cloneMappingSecurityPolicy,
+  cloneStreamDoneEvent,
+  cloneStreamDonePolicy,
+  cloneToolEventPolicy,
+  DEFAULT_MAPPING_SECURITY_POLICY,
+  DEFAULT_STREAM_DONE_EVENT,
+  DEFAULT_STREAM_DONE_POLICY,
+  DEFAULT_TOOL_EVENT_POLICY,
+  getDefaultStreamCodec,
+  STREAM_EVENT_CHANNELS,
+  STREAM_EVENT_KINDS,
+  type MappingSecurityPolicy,
+  type StreamCodecId,
+  type StreamDoneEvent,
+  type StreamDonePolicy,
+  type StreamEventChannel,
+  type StreamEventKind,
+  type ToolEventPolicy
+} from "./streamEvents";
+import {
+  legacySseMappingsToStreamMappings,
+  type StreamMappingRule
+} from "./streamMapping";
+
+export {
+  DEFAULT_MAPPING_SECURITY_POLICY,
+  DEFAULT_STREAM_DONE_EVENT,
+  DEFAULT_STREAM_DONE_POLICY,
+  DEFAULT_TOOL_EVENT_POLICY
+} from "./streamEvents";
+
 export const DEFAULT_BRIDGE_BASE_URL = "http://127.0.0.1:39399";
 export const DEFAULT_LOCAL_TOKEN = "proxy2localai-local-token";
 export const DEFAULT_TIMEOUT_MS = 0;
@@ -12,6 +44,15 @@ export type AiProvider = typeof AI_PROVIDERS[number];
 
 export const RESPONSE_MODES = ["block", "stream", "custom_json", "mapped_sse"] as const;
 export type ResponseMode = typeof RESPONSE_MODES[number];
+
+export const MESSAGE_RETURN_STRUCTURES = [
+  "anthropic_messages",
+  "openai_chat_completions",
+  "openai_responses",
+  "gemini_generate_content"
+] as const;
+export type MessageReturnStructure = typeof MESSAGE_RETURN_STRUCTURES[number];
+export const DEFAULT_MESSAGE_RETURN_STRUCTURE: MessageReturnStructure = "anthropic_messages";
 
 export type SetupMode = "wizard" | "advanced";
 export type SensitiveHeaderPolicy = "default" | "allow_all" | "custom";
@@ -59,6 +100,7 @@ export interface ProxyProfile {
   projectDir: string;
   provider: AiProvider;
   responseMode: ResponseMode;
+  messageReturnStructure: MessageReturnStructure;
   allowDangerousCli: boolean;
   enableConversationMemory: boolean;
   prompt?: string;
@@ -73,6 +115,12 @@ export interface ProxyProfile {
   sseDataEvents: string[];
   sseEventMappings?: SseEventMapping[];
   sseDoneEvent?: SseDoneEvent;
+  streamCodec?: StreamCodecId;
+  streamMappings?: StreamMappingRule[];
+  streamDoneEvent?: StreamDoneEvent;
+  toolEventPolicy?: ToolEventPolicy;
+  mappingSecurityPolicy?: MappingSecurityPolicy;
+  streamDonePolicy?: StreamDonePolicy;
   setupMode: SetupMode;
   responseTemplateId: string;
   sensitiveHeaderPolicy: SensitiveHeaderPolicy;
@@ -173,6 +221,16 @@ function normalizeResponseMode(value: unknown): ResponseMode {
     throw new Error("responseMode 必须是 block、stream、custom_json 或 mapped_sse");
   }
   return value as ResponseMode;
+}
+
+function normalizeMessageReturnStructure(value: unknown): MessageReturnStructure {
+  if (value === undefined || value === null || value === "") {
+    return DEFAULT_MESSAGE_RETURN_STRUCTURE;
+  }
+  if (typeof value !== "string" || !MESSAGE_RETURN_STRUCTURES.includes(value as MessageReturnStructure)) {
+    throw new Error("messageReturnStructure 必须是受支持的消息返回结构");
+  }
+  return value as MessageReturnStructure;
 }
 
 function normalizePositiveInteger(value: unknown, fieldName: string, fallback: number): number {
@@ -345,6 +403,162 @@ function normalizeSseDoneEvent(value: unknown): SseDoneEvent {
   };
 }
 
+function normalizeStreamCodec(value: unknown, provider: AiProvider): StreamCodecId {
+  if (value === undefined || value === null || value === "") {
+    return getDefaultStreamCodec(provider);
+  }
+  if (value === "claude-code-v1" || value === "codex-cli-v1" || value === "custom-jsonl-v1") {
+    return value;
+  }
+  throw new Error("streamCodec 必须是 claude-code-v1、codex-cli-v1 或 custom-jsonl-v1");
+}
+
+function parseJsonLike(value: unknown, fieldName: string): unknown {
+  if (typeof value !== "string") {
+    return value;
+  }
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    throw new Error(`${fieldName} 文本必须是合法 JSON`);
+  }
+}
+
+function normalizeStreamEventKind(value: unknown, fieldName: string): StreamEventKind | undefined {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+  if (typeof value !== "string" || !STREAM_EVENT_KINDS.includes(value as StreamEventKind)) {
+    throw new Error(`${fieldName} 不是支持的标准事件类型`);
+  }
+  return value as StreamEventKind;
+}
+
+function normalizeStreamEventChannel(value: unknown, fieldName: string): StreamEventChannel | undefined {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+  if (typeof value !== "string" || !STREAM_EVENT_CHANNELS.includes(value as StreamEventChannel)) {
+    throw new Error(`${fieldName} 不是支持的标准事件通道`);
+  }
+  return value as StreamEventChannel;
+}
+
+function normalizeStreamMappingRule(value: unknown, index: number): StreamMappingRule {
+  const record = asRecord(value, `streamMappings[${index}]`);
+  const match = asRecord(record.match ?? {}, `streamMappings[${index}].match`);
+  const emit = asRecord(record.emit, `streamMappings[${index}].emit`);
+  const protocol = emit.protocol ?? "sse";
+  if (protocol !== "sse") {
+    throw new Error(`streamMappings[${index}].emit.protocol 目前只支持 sse`);
+  }
+  return {
+    id: asOptionalString(record.id, `streamMappings[${index}].id`) ?? `mapping-${index + 1}`,
+    enabled: normalizeBoolean(record.enabled, `streamMappings[${index}].enabled`, true),
+    match: {
+      kind: normalizeStreamEventKind(match.kind, `streamMappings[${index}].match.kind`),
+      channel: normalizeStreamEventChannel(match.channel, `streamMappings[${index}].match.channel`),
+      providerEventType: asOptionalString(match.providerEventType, `streamMappings[${index}].match.providerEventType`),
+      toolName: asOptionalString(match.toolName, `streamMappings[${index}].match.toolName`),
+      correlationId: asOptionalString(match.correlationId, `streamMappings[${index}].match.correlationId`)
+    },
+    emit: {
+      protocol: "sse",
+      event: validateSseEventName(asString(emit.event, `streamMappings[${index}].emit.event`), `streamMappings[${index}].emit.event`),
+      data: emit.data
+    }
+  };
+}
+
+function normalizeStreamMappings(value: unknown, legacyMappings: SseEventMapping[]): StreamMappingRule[] {
+  const parsed = parseJsonLike(value, "streamMappings");
+  if (parsed === undefined || parsed === null || parsed === "") {
+    return legacySseMappingsToStreamMappings(legacyMappings);
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error("streamMappings 必须是数组");
+  }
+  const mappings = parsed.map(normalizeStreamMappingRule);
+  return mappings.length > 0 ? mappings : legacySseMappingsToStreamMappings(legacyMappings);
+}
+
+function normalizeStreamDoneEvent(value: unknown, legacyDoneEvent: SseDoneEvent): StreamDoneEvent {
+  const parsed = parseJsonLike(value, "streamDoneEvent");
+  if (parsed === undefined || parsed === null || parsed === "") {
+    return {
+      event: legacyDoneEvent.targetEvent,
+      data: legacyDoneEvent.data
+    };
+  }
+  const record = asRecord(parsed, "streamDoneEvent");
+  return {
+    event: validateSseEventName(asOptionalString(record.event, "streamDoneEvent.event") ?? legacyDoneEvent.targetEvent, "streamDoneEvent.event"),
+    data: record.data ?? cloneStreamDoneEvent().data
+  };
+}
+
+function normalizeToolEventPolicy(value: unknown): ToolEventPolicy {
+  const parsed = parseJsonLike(value, "toolEventPolicy");
+  if (parsed === undefined || parsed === null || parsed === "") {
+    return cloneToolEventPolicy();
+  }
+  const record = asRecord(parsed, "toolEventPolicy");
+  return {
+    ...cloneToolEventPolicy(),
+    enabled: normalizeBoolean(record.enabled, "toolEventPolicy.enabled", DEFAULT_TOOL_EVENT_POLICY.enabled),
+    includeInput: normalizeEnum(record.includeInput, ["none", "redacted", "raw"], "toolEventPolicy.includeInput", DEFAULT_TOOL_EVENT_POLICY.includeInput),
+    includeOutput: normalizeEnum(record.includeOutput, ["none", "summary", "raw"], "toolEventPolicy.includeOutput", DEFAULT_TOOL_EVENT_POLICY.includeOutput),
+    allowToolNames: normalizeStringArray(record.allowToolNames, "toolEventPolicy.allowToolNames"),
+    denyToolNames: normalizeStringArray(record.denyToolNames, "toolEventPolicy.denyToolNames"),
+    redactPaths: normalizeBoolean(record.redactPaths, "toolEventPolicy.redactPaths", DEFAULT_TOOL_EVENT_POLICY.redactPaths),
+    redactSecrets: normalizeBoolean(record.redactSecrets, "toolEventPolicy.redactSecrets", DEFAULT_TOOL_EVENT_POLICY.redactSecrets)
+  };
+}
+
+function normalizeMappingSecurityPolicy(value: unknown): MappingSecurityPolicy {
+  const parsed = parseJsonLike(value, "mappingSecurityPolicy");
+  if (parsed === undefined || parsed === null || parsed === "") {
+    return cloneMappingSecurityPolicy();
+  }
+  const record = asRecord(parsed, "mappingSecurityPolicy");
+  return {
+    ...cloneMappingSecurityPolicy(),
+    allowedVariables: normalizeStringArray(record.allowedVariables, "mappingSecurityPolicy.allowedVariables")
+      ?? [...DEFAULT_MAPPING_SECURITY_POLICY.allowedVariables],
+    allowRaw: normalizeBoolean(record.allowRaw, "mappingSecurityPolicy.allowRaw", DEFAULT_MAPPING_SECURITY_POLICY.allowRaw),
+    allowData: normalizeBoolean(record.allowData, "mappingSecurityPolicy.allowData", DEFAULT_MAPPING_SECURITY_POLICY.allowData),
+    allowToolInput: normalizeBoolean(record.allowToolInput, "mappingSecurityPolicy.allowToolInput", DEFAULT_MAPPING_SECURITY_POLICY.allowToolInput),
+    allowToolOutput: normalizeBoolean(record.allowToolOutput, "mappingSecurityPolicy.allowToolOutput", DEFAULT_MAPPING_SECURITY_POLICY.allowToolOutput),
+    redactDiagnostics: normalizeBoolean(record.redactDiagnostics, "mappingSecurityPolicy.redactDiagnostics", DEFAULT_MAPPING_SECURITY_POLICY.redactDiagnostics),
+    redactPreview: normalizeBoolean(record.redactPreview, "mappingSecurityPolicy.redactPreview", DEFAULT_MAPPING_SECURITY_POLICY.redactPreview),
+    persistRenderedFrames: normalizeBoolean(record.persistRenderedFrames, "mappingSecurityPolicy.persistRenderedFrames", DEFAULT_MAPPING_SECURITY_POLICY.persistRenderedFrames)
+  };
+}
+
+function normalizeStreamDonePolicy(value: unknown): StreamDonePolicy {
+  const parsed = parseJsonLike(value, "streamDonePolicy");
+  if (parsed === undefined || parsed === null || parsed === "") {
+    return cloneStreamDonePolicy();
+  }
+  const record = asRecord(parsed, "streamDonePolicy");
+  return {
+    onProviderDone: normalizeEnum(record.onProviderDone, ["emit_completed", "none"], "streamDonePolicy.onProviderDone", DEFAULT_STREAM_DONE_POLICY.onProviderDone),
+    onProviderError: normalizeEnum(record.onProviderError, ["emit_failed", "none"], "streamDonePolicy.onProviderError", DEFAULT_STREAM_DONE_POLICY.onProviderError),
+    onRendererError: normalizeEnum(record.onRendererError, ["skip_frame", "emit_error", "fail_stream"], "streamDonePolicy.onRendererError", DEFAULT_STREAM_DONE_POLICY.onRendererError),
+    onClientAbort: "none"
+  };
+}
+
+function normalizeEnum<T extends string>(value: unknown, allowed: readonly T[], fieldName: string, fallback: T): T {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+  if (typeof value !== "string" || !allowed.includes(value as T)) {
+    throw new Error(`${fieldName} 不是支持的取值`);
+  }
+  return value as T;
+}
+
 function defaultTemplateForResponseMode(mode: ResponseMode): string {
   switch (mode) {
     case "stream": return "openai_sse";
@@ -362,6 +576,9 @@ export function normalizeProfile(value: unknown): ProxyProfile {
   }
   const contextRegexFlags = normalizeRegexFlags(input.contextRegexFlags);
   const responseMode = normalizeResponseMode(input.responseMode);
+  const provider = normalizeProvider(input.provider);
+  const sseEventMappings = normalizeSseEventMappings(input.sseEventMappings);
+  const sseDoneEvent = normalizeSseDoneEvent(input.sseDoneEvent);
 
   return {
     id,
@@ -371,8 +588,9 @@ export function normalizeProfile(value: unknown): ProxyProfile {
     targetPath: normalizePath(input.targetPath),
     methods: normalizeMethods(input.methods),
     projectDir: asString(input.projectDir, "projectDir"),
-    provider: normalizeProvider(input.provider),
+    provider,
     responseMode,
+    messageReturnStructure: normalizeMessageReturnStructure(input.messageReturnStructure),
     allowDangerousCli: normalizeBoolean(input.allowDangerousCli, "allowDangerousCli", false),
     enableConversationMemory: normalizeBoolean(input.enableConversationMemory, "enableConversationMemory", false),
     prompt: asOptionalString(input.prompt, "prompt"),
@@ -385,8 +603,14 @@ export function normalizeProfile(value: unknown): ProxyProfile {
     customArgs: normalizeStringArray(input.customArgs, "customArgs"),
     customJsonTemplate: asOptionalString(input.customJsonTemplate, "customJsonTemplate"),
     sseDataEvents: normalizeEventNames(input.sseDataEvents),
-    sseEventMappings: normalizeSseEventMappings(input.sseEventMappings),
-    sseDoneEvent: normalizeSseDoneEvent(input.sseDoneEvent),
+    sseEventMappings,
+    sseDoneEvent,
+    streamCodec: normalizeStreamCodec(input.streamCodec, provider),
+    streamMappings: normalizeStreamMappings(input.streamMappings, sseEventMappings),
+    streamDoneEvent: normalizeStreamDoneEvent(input.streamDoneEvent, sseDoneEvent),
+    toolEventPolicy: normalizeToolEventPolicy(input.toolEventPolicy),
+    mappingSecurityPolicy: normalizeMappingSecurityPolicy(input.mappingSecurityPolicy),
+    streamDonePolicy: normalizeStreamDonePolicy(input.streamDonePolicy),
     setupMode: (input.setupMode === "wizard" ? "wizard" : "advanced") as SetupMode,
     responseTemplateId: typeof input.responseTemplateId === "string" && input.responseTemplateId.trim()
       ? input.responseTemplateId.trim()

@@ -1,5 +1,5 @@
 import http from "node:http";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, test } from "vitest";
@@ -19,6 +19,7 @@ const baseProfile: ProxyProfile = {
   projectDir: "C:/project/demoProject/proxy2LocalAI",
   provider: "custom",
   responseMode: "block",
+  messageReturnStructure: "anthropic_messages",
   allowDangerousCli: false,
   enableConversationMemory: false,
   timeoutMs: 0,
@@ -37,6 +38,145 @@ afterEach(async () => {
     server.close((error) => error ? reject(error) : resolve());
   })));
   servers.length = 0;
+});
+
+describe("Bridge streamMappings renderer", () => {
+  test("mapped_sse 使用 streamMappings 渲染标准事件并补齐 done 事件", async () => {
+    const provider: AiProviderAdapter = {
+      async generateText() {
+        return "";
+      },
+      async generateRawText() {
+        return "";
+      },
+      async *streamText() {
+        yield "should not use streamText";
+      },
+      async *streamEvents() {
+        yield {
+          provider: "claude",
+          eventId: "evt_000001",
+          sequence: 1,
+          kind: "delta",
+          channel: "reasoning",
+          content: "分析"
+        };
+        yield {
+          provider: "claude",
+          eventId: "evt_000002",
+          sequence: 2,
+          kind: "raw",
+          channel: "debug",
+          content: "内部状态"
+        };
+        yield {
+          provider: "claude",
+          eventId: "evt_000003",
+          sequence: 3,
+          kind: "delta",
+          channel: "message",
+          content: "你好"
+        };
+      }
+    };
+    const server = createServerWithProfile({
+      ...baseProfile,
+      responseMode: "mapped_sse",
+      streamMappings: [
+        {
+          id: "reasoning",
+          enabled: true,
+          match: { kind: "delta", channel: "reasoning" },
+          emit: { protocol: "sse", event: "reasoning", data: { delta: "{{content}}" } }
+        },
+        {
+          id: "message",
+          enabled: true,
+          match: { kind: "delta", channel: "message" },
+          emit: { protocol: "sse", event: "message", data: { delta: "{{content}}" } }
+        }
+      ],
+      streamDoneEvent: {
+        event: "finish",
+        data: { status: "completed" }
+      }
+    }, provider);
+    const baseUrl = await listen(server);
+
+    const response = await fetch(`${baseUrl}/proxy/chat?token=test-token`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ message: "test" })
+    });
+
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    const text = await response.text();
+    expect(text).toContain('event: reasoning\ndata: {"delta":"分析"}');
+    expect(text).toContain('event: message\ndata: {"delta":"你好"}');
+    expect(text).toContain('event: finish\ndata: {"status":"completed"}');
+    expect(text).not.toContain("内部状态");
+    expect(text).not.toContain("proxy_status");
+    expect(text).not.toContain("chat.completion.chunk");
+  });
+
+  test("legacy id 的 streamMappings 只要新字段被编辑，也应使用 V2 renderer", async () => {
+    const provider: AiProviderAdapter = {
+      async generateText() { return ""; },
+      async generateRawText() { return ""; },
+      async *streamText() { yield "不应使用普通 streamText"; },
+      async *streamEvents() {
+        yield {
+          provider: "claude",
+          eventId: "evt_000001",
+          sequence: 1,
+          kind: "delta",
+          channel: "message",
+          content: "你好"
+        };
+      }
+    };
+    const server = createServerWithProfile({
+      ...baseProfile,
+      responseMode: "mapped_sse",
+      sseEventMappings: [
+        { source: "message", targetEvent: "message" }
+      ],
+      sseDoneEvent: {
+        targetEvent: "done",
+        data: { status: "completed" }
+      },
+      streamMappings: [
+        {
+          id: "legacy-message",
+          enabled: true,
+          match: { kind: "delta", channel: "message" },
+          emit: {
+            protocol: "sse",
+            event: "message",
+            data: { delta: "{{content}}", via: "v2" }
+          }
+        }
+      ],
+      streamDoneEvent: {
+        event: "finish",
+        data: { status: "completed", via: "v2" }
+      }
+    }, provider);
+    const baseUrl = await listen(server);
+
+    const response = await fetch(`${baseUrl}/proxy/chat?token=test-token`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "test" })
+    });
+
+    const text = await response.text();
+    expect(text).toContain('event: message\ndata: {"delta":"你好","via":"v2"}');
+    expect(text).toContain('event: finish\ndata: {"status":"completed","via":"v2"}');
+    expect(text).not.toContain('event:done');
+  });
 });
 
 function listen(server: http.Server): Promise<string> {
@@ -67,6 +207,234 @@ function createServerWithProfile(profile: ProxyProfile, provider: AiProviderAdap
     }
   });
 }
+
+describe("Bridge 消息返回结构路由", () => {
+  test("OpenAI Chat Completions 请求会归一为 messages 并返回 chat.completion", async () => {
+    let capturedPrompt = "";
+    const provider: AiProviderAdapter = {
+      async generateText(_profile, prompt) {
+        capturedPrompt = prompt;
+        return "本地回答";
+      },
+      async generateRawText() { return ""; },
+      async *streamText() { yield ""; }
+    };
+    const server = createServerWithProfile({
+      ...baseProfile,
+      messageReturnStructure: "openai_chat_completions",
+      responseMode: "block"
+    }, provider);
+    const baseUrl = await listen(server);
+
+    const response = await fetch(`${baseUrl}/proxy/chat?token=test-token`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: "回答中文" },
+          { role: "user", content: [{ type: "text", text: "你好" }] }
+        ]
+      })
+    });
+
+    const json = await response.json() as Record<string, unknown>;
+    expect(capturedPrompt).toContain('"protocol": "openai_chat_completions"');
+    expect(capturedPrompt).toContain('"content": "你好"');
+    expect(json.object).toBe("chat.completion");
+    expect(JSON.stringify(json)).toContain("本地回答");
+  });
+
+  test("Anthropic Messages 结构返回原生 message 对象而不是 OpenAI Chat JSON", async () => {
+    const provider: AiProviderAdapter = {
+      async generateText() { return "Anthropic 回答"; },
+      async generateRawText() { return ""; },
+      async *streamText() { yield ""; }
+    };
+    const server = createServerWithProfile({
+      ...baseProfile,
+      targetPath: "/v1/messages",
+      messageReturnStructure: "anthropic_messages",
+      responseMode: "block"
+    }, provider);
+    const baseUrl = await listen(server);
+
+    const response = await fetch(`${baseUrl}/proxy/chat?token=test-token`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-5",
+        messages: [{ role: "user", content: "你好" }]
+      })
+    });
+
+    const json = await response.json() as Record<string, unknown>;
+    expect(json.type).toBe("message");
+    expect(json.role).toBe("assistant");
+    expect(JSON.stringify(json)).toContain("Anthropic 回答");
+    expect(json.object).toBeUndefined();
+  });
+
+  test("路由转换后的 prompt 仍保留原始请求体，避免丢失 tools/tool_choice/metadata", async () => {
+    let capturedPrompt = "";
+    const provider: AiProviderAdapter = {
+      async generateText(_profile, prompt) {
+        capturedPrompt = prompt;
+        return "ok";
+      },
+      async generateRawText() { return ""; },
+      async *streamText() { yield ""; }
+    };
+    const server = createServerWithProfile({
+      ...baseProfile,
+      targetPath: "/v1/messages",
+      messageReturnStructure: "anthropic_messages",
+      responseMode: "block"
+    }, provider);
+    const baseUrl = await listen(server);
+
+    await fetch(`${baseUrl}/proxy/chat?token=test-token`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        max_tokens: 1024,
+        tool_choice: { type: "tool", name: "search" },
+        tools: [{ name: "search", input_schema: { type: "object" } }],
+        metadata: { traceId: "trace-1" },
+        messages: [{ role: "user", content: "你好" }]
+      })
+    });
+
+    expect(capturedPrompt).toContain('"protocol": "anthropic_messages"');
+    expect(capturedPrompt).toContain('"messages"');
+    expect(capturedPrompt).toContain('"originalBody"');
+    expect(capturedPrompt).toContain('"tool_choice"');
+    expect(capturedPrompt).toContain('"max_tokens"');
+    expect(capturedPrompt).toContain('"traceId": "trace-1"');
+  });
+
+  test("OpenAI Responses 请求会返回 response 对象和 output_text", async () => {
+    const provider: AiProviderAdapter = {
+      async generateText() { return "Responses 回答"; },
+      async generateRawText() { return ""; },
+      async *streamText() { yield ""; }
+    };
+    const server = createServerWithProfile({
+      ...baseProfile,
+      targetPath: "/v1/responses",
+      messageReturnStructure: "openai_responses",
+      responseMode: "block"
+    }, provider);
+    const baseUrl = await listen(server);
+
+    const response = await fetch(`${baseUrl}/proxy/chat?token=test-token`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "gpt-5",
+        instructions: "简洁",
+        input: [{ role: "user", content: [{ type: "input_text", text: "解释" }] }]
+      })
+    });
+
+    const json = await response.json() as Record<string, unknown>;
+    expect(json.object).toBe("response");
+    expect(json.output_text).toBe("Responses 回答");
+    expect(JSON.stringify(json)).toContain("\"type\":\"output_text\"");
+  });
+
+  test("Gemini generateContent 请求会返回 candidates content parts", async () => {
+    const provider: AiProviderAdapter = {
+      async generateText() { return "Gemini 回答"; },
+      async generateRawText() { return ""; },
+      async *streamText() { yield ""; }
+    };
+    const server = createServerWithProfile({
+      ...baseProfile,
+      targetPath: "/v1beta/models/gemini-2.5-flash:generateContent",
+      messageReturnStructure: "gemini_generate_content",
+      responseMode: "block"
+    }, provider);
+    const baseUrl = await listen(server);
+
+    const response = await fetch(`${baseUrl}/proxy/chat?token=test-token`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: "介绍" }] }]
+      })
+    });
+
+    const text = await response.text();
+    expect(text).toContain("\"candidates\"");
+    expect(text).toContain("\"text\":\"Gemini 回答\"");
+    expect(text).toContain("\"modelVersion\":\"local-custom\"");
+  });
+
+  test("OpenAI Responses 流式响应不会漏出旧 OpenAI Chat chunk 或 proxy_status", async () => {
+    const provider: AiProviderAdapter = {
+      async generateText() { return ""; },
+      async generateRawText() { return ""; },
+      async *streamText() {
+        yield "你";
+        yield "好";
+      }
+    };
+    const server = createServerWithProfile({
+      ...baseProfile,
+      targetPath: "/v1/responses",
+      messageReturnStructure: "openai_responses",
+      responseMode: "stream"
+    }, provider);
+    const baseUrl = await listen(server);
+
+    const response = await fetch(`${baseUrl}/proxy/chat?token=test-token`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ input: "你好", stream: true })
+    });
+
+    const text = await response.text();
+    expect(text).toContain("event: response.created");
+    expect(text).toContain("event: response.output_text.delta");
+    expect(text).toContain('"delta":"你"');
+    expect(text).toContain("event: response.completed");
+    expect(text).not.toContain("chat.completion.chunk");
+    expect(text).not.toContain("proxy_status");
+  });
+
+  test("Anthropic Messages 流式响应返回 message_start 和 content_block_delta", async () => {
+    const provider: AiProviderAdapter = {
+      async generateText() { return ""; },
+      async generateRawText() { return ""; },
+      async *streamText() {
+        yield "你";
+        yield "好";
+      }
+    };
+    const server = createServerWithProfile({
+      ...baseProfile,
+      targetPath: "/v1/messages",
+      messageReturnStructure: "anthropic_messages",
+      responseMode: "stream"
+    }, provider);
+    const baseUrl = await listen(server);
+
+    const response = await fetch(`${baseUrl}/proxy/chat?token=test-token`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "你好" }], stream: true })
+    });
+
+    const text = await response.text();
+    expect(text).toContain("event: message_start");
+    expect(text).toContain("event: content_block_delta");
+    expect(text).toContain('"text":"你"');
+    expect(text).toContain("event: message_stop");
+    expect(text).not.toContain("chat.completion.chunk");
+    expect(text).not.toContain("proxy_status");
+  });
+});
 
 describe("Bridge 多轮上下文", () => {
   test("开启多轮记忆后第二次请求会带上上一轮问答，并只使用正则提取的上下文", async () => {
@@ -135,12 +503,25 @@ describe("Bridge Provider 状态事件", () => {
         yield "ok";
       }
     };
-    const server = createServerWithProfile({
+    const dir = mkdtempSync(join(tmpdir(), "proxy2localai-"));
+    const profilesPath = join(dir, "profiles.json");
+    const requestsLogPath = join(dir, "requests.log");
+    writeFileSync(profilesPath, JSON.stringify({ profiles: [{
       ...baseProfile,
       provider: "claude",
       responseMode: "stream",
       allowDangerousCli: true
-    }, provider);
+    }] }), "utf8");
+    const server = createBridgeServer({
+      token: "test-token",
+      profilesPath,
+      requestsLogPath,
+      providers: {
+        claude: provider,
+        codex: provider,
+        custom: provider
+      }
+    });
     const baseUrl = await listen(server);
 
     const response = await fetch(`${baseUrl}/proxy/chat?token=test-token`, {
@@ -153,8 +534,11 @@ describe("Bridge Provider 状态事件", () => {
 
     expect(response.ok).toBe(true);
     const text = await response.text();
-    expect(text).toContain("\"command\":\"claude\"");
-    expect(text).toContain("\"args\":[\"-p\",\"--dangerously-skip-permissions\"]");
+    expect(text).not.toContain("\"command\":\"claude\"");
+    expect(text).not.toContain("proxy_status");
+    const logText = readFileSync(requestsLogPath, "utf8");
+    expect(logText).toContain("\"command\":\"claude\"");
+    expect(logText).toContain("\"args\":[\"-p\",\"--dangerously-skip-permissions\"]");
   });
 });
 
@@ -415,7 +799,8 @@ describe("Bridge 诊断阶段", () => {
 
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.choices[0].message.content).toBe("诊断测试响应");
+    expect(body.type).toBe("message");
+    expect(body.content[0].text).toBe("诊断测试响应");
   });
 
   test("stream 模式 proxy 请求在接入诊断后仍正常工作", async () => {

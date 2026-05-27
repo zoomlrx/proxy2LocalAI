@@ -12,6 +12,7 @@ const baseProfile: ProxyProfile = {
   projectDir: "C:/project/demoProject/proxy2LocalAI",
   provider: "claude",
   responseMode: "block",
+  messageReturnStructure: "anthropic_messages",
   timeoutMs: 0,
   maxBodyBytes: 0,
   sseDataEvents: ["message"],

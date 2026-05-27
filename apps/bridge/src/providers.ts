@@ -2,7 +2,9 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { createInterface } from "node:readline";
-import type { AiProvider, ProxyProfile } from "@proxy2localai/shared";
+import { getDefaultStreamCodec, type AiProvider, type NormalizedStreamEvent, type ProxyProfile } from "@proxy2localai/shared";
+import { createClaudeCodeStreamCodec, type StreamCodec } from "./streamCodecs/claudeCode";
+import { createCodexCliStreamCodec } from "./streamCodecs/codexCli";
 
 export interface AiProviderAdapter {
   generateText(profile: ProxyProfile, prompt: string, context?: ProviderRunContext): Promise<string>;
@@ -18,10 +20,12 @@ export interface ProviderRunContext {
   onEvent?: (event: Record<string, unknown>) => void;
 }
 
-export interface ProviderStreamEvent {
+export interface LegacyProviderStreamEvent {
   source: string;
   content: string;
 }
+
+export type ProviderStreamEvent = NormalizedStreamEvent | LegacyProviderStreamEvent;
 
 export interface CommandSpec {
   command: string;
@@ -91,7 +95,7 @@ export function extractTextFromProviderLine(line: string, options: ExtractTextOp
   }
 }
 
-export function extractProviderStreamEventFromLine(line: string): ProviderStreamEvent | null {
+export function extractProviderStreamEventFromLine(line: string): LegacyProviderStreamEvent | null {
   const trimmed = line.trim();
   if (!trimmed) {
     return null;
@@ -153,7 +157,7 @@ function extractStreamingProviderText(value: unknown): string {
   return extractProviderStreamEvent(value)?.content ?? "";
 }
 
-function extractProviderStreamEvent(value: unknown): ProviderStreamEvent | null {
+function extractProviderStreamEvent(value: unknown): LegacyProviderStreamEvent | null {
   if (typeof value === "string") {
     return {
       source: "message",
@@ -185,7 +189,7 @@ function extractClaudeStreamEventText(event: unknown): string {
   return extractClaudeStreamEvent(event)?.content ?? "";
 }
 
-function extractClaudeStreamEvent(event: unknown): ProviderStreamEvent | null {
+function extractClaudeStreamEvent(event: unknown): LegacyProviderStreamEvent | null {
   if (!isRecord(event)) {
     return null;
   }
@@ -634,6 +638,7 @@ async function* runCommandToStreamEvents(
     input: child.stdout,
     crlfDelay: Infinity
   });
+  const codec = createStreamCodec(profile);
 
   try {
     for await (const line of lines) {
@@ -643,8 +648,8 @@ async function* runCommandToStreamEvents(
         lineChars: line.length,
         text: line.slice(0, 1000)
       });
-      const event = extractProviderStreamEventFromLine(line);
-      if (event) {
+      const events = codec.decodeLine(line);
+      for (const event of events) {
         yield event;
       }
     }
@@ -676,6 +681,39 @@ async function* runCommandToStreamEvents(
   if (exit.code !== 0) {
     throw new Error(stderr || `${spec.command} 退出码 ${exit.code ?? "unknown"}`);
   }
+}
+
+function createStreamCodec(profile: ProxyProfile): StreamCodec {
+  const codecId = profile.streamCodec ?? getDefaultStreamCodec(profile.provider);
+  if (codecId === "claude-code-v1") {
+    return createClaudeCodeStreamCodec();
+  }
+  if (codecId === "codex-cli-v1") {
+    return createCodexCliStreamCodec();
+  }
+  return createCustomJsonlStreamCodec(profile.provider);
+}
+
+function createCustomJsonlStreamCodec(provider: AiProvider): StreamCodec {
+  let sequence = 0;
+  return {
+    decodeLine(line: string): NormalizedStreamEvent[] {
+      const legacy = extractProviderStreamEventFromLine(line);
+      if (!legacy) {
+        return [];
+      }
+      sequence += 1;
+      return [{
+        provider: provider === "claude" || provider === "codex" ? provider : "custom",
+        eventId: `evt_${String(sequence).padStart(6, "0")}`,
+        sequence,
+        kind: "delta",
+        channel: legacy.source === "reasoning" ? "reasoning" : legacy.source === "debug" ? "debug" : legacy.source === "status" ? "status" : "message",
+        content: legacy.content,
+        meta: { providerEventType: legacy.source }
+      }];
+    }
+  };
 }
 
 async function runCommandToRawText(

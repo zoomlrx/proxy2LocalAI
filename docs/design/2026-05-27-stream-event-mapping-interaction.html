@@ -1,0 +1,1826 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Proxy2LocalAI 响应映射交互原型</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7f9;
+      --surface: #ffffff;
+      --surface-soft: #f8fafc;
+      --surface-strong: #eef3f6;
+      --text: #102029;
+      --text-soft: #425466;
+      --muted: #647987;
+      --border: #d7e0e6;
+      --border-strong: #b7c7d1;
+      --primary: #0f766e;
+      --primary-dark: #0a5f5a;
+      --primary-soft: #dff5ef;
+      --success: #12805c;
+      --success-soft: #def7ec;
+      --warning: #a16207;
+      --warning-soft: #fff3d5;
+      --danger: #b42318;
+      --danger-soft: #fee4e2;
+      --info: #2563eb;
+      --info-soft: #e7efff;
+      --shadow: 0 14px 36px rgba(15, 32, 41, 0.14);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-width: 1180px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    button:disabled,
+    input:disabled,
+    select:disabled,
+    textarea:disabled {
+      cursor: not-allowed;
+      opacity: 0.62;
+    }
+
+    a,
+    button,
+    input,
+    select,
+    textarea,
+    [tabindex] {
+      outline: none;
+    }
+
+    a:focus-visible,
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible,
+    [tabindex]:focus-visible {
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.22), 0 0 0 1px var(--info);
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 264px minmax(720px, 1fr) 336px;
+      gap: 16px;
+      min-height: 100vh;
+      padding: 16px;
+    }
+
+    .sidebar,
+    .main,
+    .aside {
+      min-width: 0;
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      position: sticky;
+      top: 16px;
+      height: calc(100vh - 32px);
+    }
+
+    .brand {
+      padding: 16px;
+    }
+
+    .brandRow {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .logo {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border-radius: 8px;
+      background: #083b3a;
+      color: white;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.2;
+    }
+
+    .brand p {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .bridgeState {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 14px;
+      padding: 10px;
+      border: 1px solid #a9ddcb;
+      border-radius: 8px;
+      background: var(--success-soft);
+    }
+
+    .stateLeft {
+      min-width: 0;
+    }
+
+    .stateTitle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--success);
+      box-shadow: 0 0 0 4px rgba(18, 128, 92, 0.12);
+      flex: 0 0 auto;
+    }
+
+    .tiny {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .nav {
+      padding: 8px;
+    }
+
+    .nav button {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      min-height: 38px;
+      margin: 2px 0;
+      padding: 8px 10px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--text-soft);
+      text-align: left;
+    }
+
+    .nav button:hover {
+      background: var(--surface-soft);
+      color: var(--text);
+    }
+
+    .nav button.active {
+      border-color: #9ed8cc;
+      background: var(--primary-soft);
+      color: #053f3d;
+      font-weight: 700;
+    }
+
+    .summary {
+      margin-top: auto;
+      padding: 14px;
+    }
+
+    .summary h2,
+    .aside h2,
+    .sectionHeader h2 {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.3;
+    }
+
+    .summaryGrid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .summaryBox {
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--surface-soft);
+    }
+
+    .summaryValue {
+      margin-top: 3px;
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .main {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .hero {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px;
+      align-items: flex-start;
+    }
+
+    .eyebrow {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+    }
+
+    .hero h2 {
+      margin: 4px 0 3px;
+      font-size: 24px;
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+
+    .hero p {
+      margin: 0;
+      max-width: 760px;
+      color: var(--text-soft);
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-height: 34px;
+      padding: 7px 12px;
+      border: 1px solid var(--border-strong);
+      border-radius: 7px;
+      background: var(--surface);
+      color: var(--text);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      border-color: #8aa1ad;
+      background: var(--surface-soft);
+    }
+
+    .btn.primary {
+      border-color: var(--primary);
+      background: var(--primary);
+      color: white;
+    }
+
+    .btn.primary:hover {
+      background: var(--primary-dark);
+    }
+
+    .btn.ghost {
+      border-color: transparent;
+      background: transparent;
+      color: var(--text-soft);
+    }
+
+    .btn.small {
+      min-height: 30px;
+      padding: 5px 9px;
+      font-size: 12px;
+    }
+
+    .icon {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      position: relative;
+      flex: 0 0 auto;
+    }
+
+    .icon.plus::before,
+    .icon.plus::after {
+      content: "";
+      position: absolute;
+      background: currentColor;
+      left: 3px;
+      right: 3px;
+      top: 7px;
+      height: 2px;
+      border-radius: 2px;
+    }
+
+    .icon.plus::after {
+      top: 3px;
+      bottom: 3px;
+      left: 7px;
+      right: auto;
+      width: 2px;
+      height: auto;
+    }
+
+    .icon.check::before {
+      content: "";
+      position: absolute;
+      left: 3px;
+      top: 4px;
+      width: 9px;
+      height: 5px;
+      border-left: 2px solid currentColor;
+      border-bottom: 2px solid currentColor;
+      transform: rotate(-45deg);
+    }
+
+    .icon.refresh::before {
+      content: "";
+      position: absolute;
+      inset: 3px;
+      border: 2px solid currentColor;
+      border-left-color: transparent;
+      border-radius: 999px;
+    }
+
+    .callout {
+      display: flex;
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid #a7d5e8;
+      border-radius: 8px;
+      background: #eef8fc;
+      color: #174b63;
+    }
+
+    .callout.warning {
+      border-color: #f2cf83;
+      background: var(--warning-soft);
+      color: #65420b;
+    }
+
+    .callout.danger {
+      border-color: #f2aaa5;
+      background: var(--danger-soft);
+      color: #7a271a;
+    }
+
+    .callout strong {
+      display: block;
+      color: inherit;
+    }
+
+    .section {
+      padding: 14px;
+    }
+
+    .sectionHeader {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+
+    .sectionHeader p {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .templateGrid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .templateCard {
+      display: block;
+      min-height: 142px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-soft);
+      color: var(--text);
+      text-align: left;
+    }
+
+    .templateCard:hover {
+      border-color: var(--border-strong);
+      background: #fbfdfe;
+    }
+
+    .templateCard.active {
+      border-color: #8acdbf;
+      background: var(--primary-soft);
+      box-shadow: inset 3px 0 0 var(--primary);
+    }
+
+    .templateCard h3 {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin: 0;
+      font-size: 14px;
+    }
+
+    .templateCard p {
+      margin: 7px 0 10px;
+      color: var(--text-soft);
+      font-size: 12px;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
+      min-height: 22px;
+      padding: 2px 7px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface);
+      color: var(--text-soft);
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.3;
+    }
+
+    .chip.success {
+      border-color: #95d5bb;
+      background: var(--success-soft);
+      color: #075c42;
+      font-family: var(--sans);
+      font-weight: 700;
+    }
+
+    .chip.warning {
+      border-color: #f1c87b;
+      background: var(--warning-soft);
+      color: #70490a;
+      font-family: var(--sans);
+      font-weight: 700;
+    }
+
+    .chip.info {
+      border-color: #b7caf7;
+      background: var(--info-soft);
+      color: #1b4fb5;
+      font-family: var(--sans);
+      font-weight: 700;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-soft);
+    }
+
+    .tab {
+      min-height: 30px;
+      padding: 5px 10px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-soft);
+      font-weight: 700;
+    }
+
+    .tab[aria-selected="true"] {
+      border-color: var(--border);
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    .modeBody[hidden] {
+      display: none;
+    }
+
+    .accordion {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .accordionButton {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      min-height: 42px;
+      padding: 10px 12px;
+      border: 0;
+      background: var(--surface-soft);
+      color: var(--text);
+      font-weight: 800;
+      text-align: left;
+    }
+
+    .accordionButton:hover {
+      background: var(--surface-strong);
+    }
+
+    .accordionPanel {
+      padding: 0 12px 12px;
+      background: var(--surface);
+    }
+
+    .accordionPanel[hidden] {
+      display: none;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    th {
+      padding: 8px 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-align: left;
+    }
+
+    td {
+      padding: 8px;
+      border-top: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    .rulesShell {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .ruleRow {
+      background: var(--surface);
+    }
+
+    .ruleRow:hover {
+      background: #fbfdfe;
+    }
+
+    .ruleName {
+      min-width: 0;
+      font-weight: 800;
+    }
+
+    .ruleSub {
+      overflow: hidden;
+      margin-top: 2px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    label.field {
+      display: grid;
+      gap: 5px;
+      color: var(--text-soft);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    input[type="text"],
+    select,
+    textarea {
+      width: 100%;
+      min-height: 34px;
+      border: 1px solid var(--border-strong);
+      border-radius: 7px;
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    input[type="text"],
+    select {
+      padding: 6px 9px;
+    }
+
+    textarea {
+      min-height: 82px;
+      padding: 9px;
+      resize: vertical;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    input[type="text"]:hover,
+    select:hover,
+    textarea:hover {
+      border-color: #91a4af;
+    }
+
+    .switch {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      width: 42px;
+      height: 24px;
+      flex: 0 0 auto;
+    }
+
+    .switch input {
+      position: absolute;
+      opacity: 0;
+    }
+
+    .slider {
+      width: 42px;
+      height: 24px;
+      border-radius: 999px;
+      background: #a9bac4;
+      transition: background .15s ease;
+    }
+
+    .slider::after {
+      content: "";
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      width: 16px;
+      height: 16px;
+      border-radius: 999px;
+      background: white;
+      transition: transform .15s ease;
+      box-shadow: 0 1px 3px rgba(15, 32, 41, .22);
+    }
+
+    .switch input:checked + .slider {
+      background: var(--primary);
+    }
+
+    .switch input:checked + .slider::after {
+      transform: translateX(18px);
+    }
+
+    .switch input:focus-visible + .slider {
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.22), 0 0 0 1px var(--info);
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr);
+      gap: 12px;
+    }
+
+    .previewBox {
+      display: grid;
+      gap: 10px;
+      min-height: 100%;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #101820;
+      color: #d8e6ee;
+    }
+
+    .previewToolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      color: #a8bfca;
+      font-size: 12px;
+    }
+
+    pre {
+      overflow: auto;
+      margin: 0;
+      padding: 12px;
+      border-radius: 7px;
+      background: #0b1218;
+      color: #d8e6ee;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .codeLight {
+      border: 1px solid var(--border);
+      background: var(--surface-soft);
+      color: #21313b;
+    }
+
+    .aside {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      position: sticky;
+      top: 16px;
+      height: calc(100vh - 32px);
+      overflow: auto;
+    }
+
+    .aside .panel {
+      padding: 14px;
+    }
+
+    .kv {
+      display: grid;
+      gap: 9px;
+      margin-top: 12px;
+    }
+
+    .kvRow {
+      display: grid;
+      grid-template-columns: 92px minmax(0, 1fr);
+      gap: 8px;
+      align-items: start;
+      font-size: 13px;
+    }
+
+    .kvKey {
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .kvValue {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .policyList {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .policyItem {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      padding: 9px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--surface-soft);
+    }
+
+    .policyItem strong {
+      display: block;
+      font-size: 13px;
+    }
+
+    .policyItem span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .statusSteps {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .step {
+      min-height: 72px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-soft);
+    }
+
+    .step.ok {
+      border-color: #9dd7c3;
+      background: var(--success-soft);
+    }
+
+    .step.warn {
+      border-color: #f0cf89;
+      background: var(--warning-soft);
+    }
+
+    .step strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
+
+    .step span {
+      color: var(--text-soft);
+      font-size: 12px;
+    }
+
+    .empty {
+      padding: 16px;
+      border: 1px dashed var(--border-strong);
+      border-radius: 8px;
+      background: var(--surface-soft);
+      color: var(--muted);
+    }
+
+    .drawerBackdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: none;
+      background: rgba(11, 18, 24, 0.34);
+    }
+
+    .drawerBackdrop.open {
+      display: block;
+    }
+
+    .drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      z-index: 21;
+      width: min(620px, 96vw);
+      height: 100vh;
+      border-left: 1px solid var(--border);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      transform: translateX(104%);
+      transition: transform .2s ease;
+    }
+
+    .drawer.open {
+      transform: translateX(0);
+    }
+
+    .drawerHeader {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .drawerHeader h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .drawerBody {
+      display: grid;
+      gap: 14px;
+      height: calc(100vh - 70px);
+      overflow: auto;
+      padding: 16px;
+    }
+
+    .drawerGrid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .toast {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 40;
+      display: none;
+      max-width: 420px;
+      padding: 12px 14px;
+      border: 1px solid #91d7c6;
+      border-radius: 8px;
+      background: #ecfbf7;
+      color: #064d47;
+      box-shadow: var(--shadow);
+      font-weight: 700;
+    }
+
+    .toast.show {
+      display: block;
+    }
+
+    @media (max-width: 1240px) {
+      body {
+        min-width: 980px;
+      }
+
+      .app {
+        grid-template-columns: 230px minmax(640px, 1fr);
+      }
+
+      .aside {
+        grid-column: 1 / -1;
+        position: static;
+        height: auto;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .templateGrid,
+      .statusSteps {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" aria-label="主导航">
+      <section class="panel brand">
+        <div class="brandRow">
+          <div class="logo" aria-hidden="true">P2</div>
+          <div>
+            <h1>Proxy2LocalAI</h1>
+            <p>响应映射交互原型</p>
+          </div>
+        </div>
+        <div class="bridgeState">
+          <div class="stateLeft">
+            <div class="stateTitle"><span class="dot" aria-hidden="true"></span>Bridge 在线</div>
+            <div class="tiny">v0.1.0 · proto v1</div>
+          </div>
+          <span class="chip success">配置已加载</span>
+        </div>
+      </section>
+
+      <nav class="panel nav" aria-label="功能区">
+        <button type="button">控制台 <span class="tiny">Overview</span></button>
+        <button type="button">代理规则 <span class="tiny">Profiles</span></button>
+        <button type="button" class="active" aria-current="page">响应映射 <span class="tiny">mapped_sse</span></button>
+        <button type="button">请求诊断 <span class="tiny">Trace</span></button>
+        <button type="button">安全权限 <span class="tiny">Policy</span></button>
+        <button type="button">系统设置 <span class="tiny">Bridge</span></button>
+      </nav>
+
+      <section class="panel summary" aria-labelledby="run-summary-title">
+        <h2 id="run-summary-title">运行摘要</h2>
+        <div class="summaryGrid">
+          <div class="summaryBox">
+            <div class="tiny">启用规则</div>
+            <div class="summaryValue" id="enabledCount">2</div>
+          </div>
+          <div class="summaryBox">
+            <div class="tiny">安全阻断</div>
+            <div class="summaryValue" id="blockedCount">0</div>
+          </div>
+          <div class="summaryBox">
+            <div class="tiny">Codec</div>
+            <div class="summaryValue" style="font-size: 13px;">claude</div>
+          </div>
+          <div class="summaryBox">
+            <div class="tiny">模式</div>
+            <div class="summaryValue" style="font-size: 13px;">mapped</div>
+          </div>
+        </div>
+      </section>
+    </aside>
+
+    <main class="main">
+      <section class="panel hero">
+        <div>
+          <div class="eyebrow">Profile: 智能问答 · responseMode=mapped_sse</div>
+          <h2>响应映射工作台</h2>
+          <p>配置目标页面期望收到的 SSE 结构。Proxy2LocalAI 会先把 Claude Code / Codex 的复杂流式事件转换成统一事件，再按这里的规则输出。</p>
+        </div>
+        <div class="actions">
+          <button class="btn" type="button" id="openDrawer"><span class="icon check" aria-hidden="true"></span>规则详情</button>
+          <button class="btn" type="button" id="validateBtn">校验配置</button>
+          <button class="btn primary" type="button" id="saveBtn"><span class="icon check" aria-hidden="true"></span>保存映射</button>
+        </div>
+      </section>
+
+      <section class="callout" aria-label="使用说明">
+        <div aria-hidden="true" class="chip info">指引</div>
+        <div>
+          <strong>普通用户只需要选模板、改 event 名和 data JSON。</strong>
+          标准事件、危险变量和 Provider 原始 JSONL 被放到说明、专家模式与安全策略里，避免基础配置被复杂字段淹没。
+        </div>
+      </section>
+
+      <section class="panel section" aria-labelledby="templates-title">
+        <div class="sectionHeader">
+          <div>
+            <h2 id="templates-title">1. 选择内置模板</h2>
+            <p>模板用于快速生成 streamMappings、doneEvent 和默认安全策略，可保存后继续细调。</p>
+          </div>
+          <span class="chip success" id="templateState">当前：业务流式 SSE</span>
+        </div>
+        <div class="templateGrid" id="templateGrid" role="list"></div>
+      </section>
+
+      <section class="panel section" aria-labelledby="standard-events-title">
+        <div class="sectionHeader">
+          <div>
+            <h2 id="standard-events-title">2. 标准事件说明</h2>
+            <p>把 Provider 原始输出翻译成用户可理解的通道，默认隐藏高风险字段。</p>
+          </div>
+        </div>
+        <div class="accordion">
+          <button class="accordionButton" type="button" id="eventsToggle" aria-expanded="true" aria-controls="eventsPanel">
+            标准通道与默认返回策略
+            <span class="tiny" id="eventsToggleText">收起</span>
+          </button>
+          <div class="accordionPanel" id="eventsPanel">
+            <table aria-label="标准事件通道说明">
+              <thead>
+                <tr>
+                  <th style="width: 18%;">标准通道</th>
+                  <th>含义</th>
+                  <th style="width: 20%;">默认是否返回</th>
+                  <th style="width: 22%;">设计处理</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><span class="chip">message</span></td><td>AI 最终回答文本增量。</td><td><span class="chip success">是</span></td><td>普通模式默认展示。</td></tr>
+                <tr><td><span class="chip">reasoning</span></td><td>推理或思考文本增量。</td><td><span class="chip warning">用户启用</span></td><td>模板化开启，避免误传。</td></tr>
+                <tr><td><span class="chip">tool</span></td><td>工具调用、审批、工具结果。</td><td><span class="chip warning">用户启用</span></td><td>进入安全策略隔离区。</td></tr>
+                <tr><td><span class="chip">status</span></td><td>Provider 生命周期状态。</td><td><span class="chip">诊断显示</span></td><td>默认不发给目标页面。</td></tr>
+                <tr><td><span class="chip">error</span></td><td>错误事件。</td><td><span class="chip success">是</span></td><td>需说明阶段与原因。</td></tr>
+                <tr><td><span class="chip">done</span></td><td>流结束事件。</td><td><span class="chip success">是</span></td><td>由 done policy 控制。</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel section" aria-labelledby="rules-title">
+        <div class="sectionHeader">
+          <div>
+            <h2 id="rules-title">3. 映射规则编辑</h2>
+            <p>普通模式只暴露最常用字段；专家 JSON 放在后置标签页中，并对危险变量即时提示。</p>
+          </div>
+          <div class="tabs" role="tablist" aria-label="编辑模式">
+            <button class="tab" type="button" id="simpleTab" role="tab" aria-selected="true" aria-controls="simpleMode">普通模式</button>
+            <button class="tab" type="button" id="expertTab" role="tab" aria-selected="false" aria-controls="expertMode">专家 JSON</button>
+          </div>
+        </div>
+
+        <div id="simpleMode" class="modeBody" role="tabpanel" aria-labelledby="simpleTab">
+          <div class="rulesShell">
+            <table aria-label="映射规则编辑表">
+              <thead>
+                <tr>
+                  <th style="width: 72px;">启用</th>
+                  <th style="width: 22%;">规则</th>
+                  <th style="width: 18%;">标准事件</th>
+                  <th style="width: 18%;">SSE event</th>
+                  <th>data JSON 模板</th>
+                  <th style="width: 92px;">操作</th>
+                </tr>
+              </thead>
+              <tbody id="rulesBody"></tbody>
+            </table>
+          </div>
+          <div class="actions" style="justify-content: flex-start; margin-top: 12px;">
+            <button class="btn" type="button" id="addRule"><span class="icon plus" aria-hidden="true"></span>新增规则</button>
+            <button class="btn" type="button" id="copyRules">复制配置 JSON</button>
+          </div>
+        </div>
+
+        <div id="expertMode" class="modeBody" role="tabpanel" aria-labelledby="expertTab" hidden>
+          <div class="split">
+            <div>
+              <label class="field" for="expertJson">完整 streamMappings JSON</label>
+              <textarea id="expertJson" style="min-height: 310px;"></textarea>
+              <div class="actions" style="justify-content: flex-start; margin-top: 10px;">
+                <button class="btn primary" type="button" id="applyExpert">应用 JSON</button>
+                <button class="btn" type="button" id="formatExpert">格式化</button>
+              </div>
+            </div>
+            <div>
+              <div class="callout warning" id="dangerHint" style="display: none;">
+                <div class="chip warning" aria-hidden="true">风险</div>
+                <div><strong>检测到危险变量。</strong> `raw`、`data`、`tool.input`、`tool.output` 默认不会输出到目标页面，必须在安全策略中显式开启。</div>
+              </div>
+              <div style="height: 10px;"></div>
+              <h3 style="margin: 0 0 8px; font-size: 14px;">可用变量</h3>
+              <div class="chips" aria-label="可用模板变量">
+                <span class="chip">{{content}}</span>
+                <span class="chip">{{sequence}}</span>
+                <span class="chip">{{eventId}}</span>
+                <span class="chip">{{kind}}</span>
+                <span class="chip">{{channel}}</span>
+                <span class="chip">{{tool.name}}</span>
+                <span class="chip">{{tool.status}}</span>
+                <span class="chip">{{meta.model}}</span>
+                <span class="chip warning">{{raw}}</span>
+                <span class="chip warning">{{data}}</span>
+              </div>
+              <pre class="codeLight" style="margin-top: 12px;">事件名校验：^[A-Za-z0-9_.:-]{1,80}$
+缺失变量：默认 empty_string
+渲染失败：默认 skip_frame
+data 编码：第一阶段固定 JSON.stringify()</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel section" aria-labelledby="preview-title">
+        <div class="sectionHeader">
+          <div>
+            <h2 id="preview-title">4. 样例推断与预览</h2>
+            <p>从目标响应样例中提取 event 名和常见文本字段，再用模拟标准事件预览最终 SSE 输出。</p>
+          </div>
+          <div class="actions">
+            <button class="btn" type="button" id="inferBtn">从样例推断</button>
+            <button class="btn" type="button" id="copyPreview">复制预览</button>
+          </div>
+        </div>
+
+        <div class="split">
+          <div>
+            <label class="field" for="sampleInput">目标页面期望收到的 SSE 样例</label>
+            <textarea id="sampleInput" style="min-height: 184px;">event: chat
+data: {"type":"answer.delta","content":"你好"}
+
+event: finish
+data: {"type":"done","status":"completed"}</textarea>
+            <div id="inferResult" class="empty" style="margin-top: 10px;">尚未推断。点击“从样例推断”后，这里会显示 event、content 路径和 done 事件。</div>
+          </div>
+
+          <div class="previewBox">
+            <div class="previewToolbar">
+              <span>渲染预览</span>
+              <label class="field" for="eventSample" style="max-width: 230px; color: #d8e6ee;">模拟事件
+                <select id="eventSample">
+                  <option value="message">delta / message</option>
+                  <option value="reasoning">delta / reasoning</option>
+                  <option value="tool">tool_call_start / tool</option>
+                  <option value="error">error / status</option>
+                </select>
+              </label>
+            </div>
+            <pre id="previewOutput" aria-live="polite"></pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel section" aria-labelledby="quality-title">
+        <div class="sectionHeader">
+          <div>
+            <h2 id="quality-title">设计验收重点</h2>
+            <p>开发实现时可按这些点拆 UI 用例，不需要先阅读 Provider 原始 JSONL。</p>
+          </div>
+        </div>
+        <div class="statusSteps">
+          <div class="step ok"><strong>模板可选</strong><span>至少 4 个内置模板，可保存后继续编辑。</span></div>
+          <div class="step ok"><strong>规则可预览</strong><span>保存前展示最终 SSE event 与 data。</span></div>
+          <div class="step warn"><strong>危险变量隔离</strong><span>raw/data/tool raw 默认禁用并提示风险。</span></div>
+          <div class="step ok"><strong>错误可定位</strong><span>区分 codec、匹配、渲染、provider 阶段。</span></div>
+        </div>
+      </section>
+    </main>
+
+    <aside class="aside" aria-label="上下文信息">
+      <section class="panel" aria-labelledby="profile-title">
+        <div class="sectionHeader" style="margin-bottom: 0;">
+          <div>
+            <h2 id="profile-title">Profile 摘要</h2>
+            <p>关键配置在保存前可扫读确认。</p>
+          </div>
+          <span class="chip success">启用</span>
+        </div>
+        <div class="kv">
+          <div class="kvRow"><div class="kvKey">目标接口</div><div class="kvValue">/qiqiao2/console/api/v1/bpms-workflow</div></div>
+          <div class="kvRow"><div class="kvKey">Provider</div><div class="kvValue">claude</div></div>
+          <div class="kvRow"><div class="kvKey">Codec</div><div class="kvValue">claude-code-v1</div></div>
+          <div class="kvRow"><div class="kvKey">响应协议</div><div class="kvValue">mapped_sse</div></div>
+          <div class="kvRow"><div class="kvKey">完成事件</div><div class="kvValue" id="doneEventValue">finish</div></div>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="policy-title">
+        <div class="sectionHeader" style="margin-bottom: 0;">
+          <div>
+            <h2 id="policy-title">安全策略</h2>
+            <p>高风险输出默认隔离，需要显式开启。</p>
+          </div>
+        </div>
+        <div class="policyList">
+          <label class="policyItem">
+            <span><strong>输出 tool 事件</strong><span>默认关闭，避免泄露命令上下文</span></span>
+            <span class="switch"><input type="checkbox" id="toolPolicy"><span class="slider"></span></span>
+          </label>
+          <label class="policyItem">
+            <span><strong>允许 raw/data</strong><span>专家能力，需二次确认</span></span>
+            <span class="switch"><input type="checkbox" id="rawPolicy"><span class="slider"></span></span>
+          </label>
+          <label class="policyItem">
+            <span><strong>预览脱敏</strong><span>真实 provider 输出也先脱敏</span></span>
+            <span class="switch"><input type="checkbox" id="redactPreview" checked><span class="slider"></span></span>
+          </label>
+          <label class="policyItem">
+            <span><strong>持久化渲染帧</strong><span>默认不落完整响应内容</span></span>
+            <span class="switch"><input type="checkbox" id="persistFrames"><span class="slider"></span></span>
+          </label>
+        </div>
+        <div id="policyWarning" class="callout warning" style="display: none; margin-top: 12px;">
+          <div class="chip warning" aria-hidden="true">确认</div>
+          <div><strong>安全边界已放宽。</strong>实现时应加入二次确认、审计提示和可撤销入口。</div>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="diagnostic-title">
+        <div class="sectionHeader" style="margin-bottom: 0;">
+          <div>
+            <h2 id="diagnostic-title">诊断链路</h2>
+            <p>失败时应显示阶段、原因和下一步。</p>
+          </div>
+        </div>
+        <div class="kv">
+          <div class="kvRow"><div class="kvKey">Codec</div><div><span class="chip success">已识别</span></div></div>
+          <div class="kvRow"><div class="kvKey">规则匹配</div><div><span class="chip success">命中</span></div></div>
+          <div class="kvRow"><div class="kvKey">模板渲染</div><div><span class="chip success">通过</span></div></div>
+          <div class="kvRow"><div class="kvKey">输出帧</div><div><span class="chip info" id="frameCount">2 frames</span></div></div>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <div class="drawerBackdrop" id="drawerBackdrop" tabindex="-1"></div>
+  <aside class="drawer" id="drawer" aria-hidden="true" aria-labelledby="drawerTitle">
+    <div class="drawerHeader">
+      <div>
+        <h2 id="drawerTitle">规则详情</h2>
+        <div class="tiny">详情信息以抽屉承载，避免主列表被长 JSON 和专家字段打散。</div>
+      </div>
+      <button class="btn small" type="button" id="closeDrawer" aria-label="关闭规则详情">关闭</button>
+    </div>
+    <div class="drawerBody">
+      <section>
+        <h3 style="margin: 0 0 8px; font-size: 14px;">当前规则</h3>
+        <div class="drawerGrid">
+          <label class="field">规则 ID<input type="text" id="drawerRuleId"></label>
+          <label class="field">SSE event<input type="text" id="drawerEventName"></label>
+          <label class="field">Kind<select id="drawerKind"></select></label>
+          <label class="field">Channel<select id="drawerChannel"></select></label>
+        </div>
+      </section>
+      <section>
+        <h3 style="margin: 0 0 8px; font-size: 14px;">data JSON 模板</h3>
+        <textarea id="drawerData" style="min-height: 150px;"></textarea>
+      </section>
+      <section class="callout warning">
+        <div class="chip warning" aria-hidden="true">边界</div>
+        <div>
+          <strong>抽屉只承载单条规则的细节。</strong>
+          主列表保持摘要、启停、event 与主要 data，避免规则数量增加后页面失焦。
+        </div>
+      </section>
+      <section>
+        <h3 style="margin: 0 0 8px; font-size: 14px;">Done Policy</h3>
+        <div class="drawerGrid">
+          <label class="field">Provider 完成<select><option>emit_completed</option><option>none</option></select></label>
+          <label class="field">Provider 错误<select><option>emit_failed</option><option>none</option></select></label>
+          <label class="field">渲染错误<select><option>skip_frame</option><option>emit_error</option><option>fail_stream</option></select></label>
+          <label class="field">客户端断开<select><option>none</option></select></label>
+        </div>
+      </section>
+      <div class="actions" style="justify-content: flex-start;">
+        <button class="btn primary" type="button" id="applyDrawer">应用到规则</button>
+        <button class="btn" type="button" id="drawerCopy">复制规则 JSON</button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    const templates = {
+      generic: {
+        name: "通用聊天 SSE",
+        desc: "只返回最终回答文本，适合大多数聊天接口。",
+        doneEvent: "done",
+        tags: ["message", "done", "低风险"],
+        rules: [
+          rule("message", true, "delta", "message", "message", { content: "{{content}}" })
+        ]
+      },
+      reasoning: {
+        name: "带推理过程 SSE",
+        desc: "区分 reasoning 与最终回答，适合可视化思考过程。",
+        doneEvent: "done",
+        tags: ["reasoning", "message", "done"],
+        rules: [
+          rule("reasoning", true, "delta", "reasoning", "reasoning", { delta: "{{content}}" }),
+          rule("message", true, "delta", "message", "message", { delta: "{{content}}" })
+        ]
+      },
+      tool: {
+        name: "工具状态 SSE",
+        desc: "展示工具 start、delta、end，默认脱敏输入输出。",
+        doneEvent: "done",
+        tags: ["tool", "redacted", "专家确认"],
+        rules: [
+          rule("tool-start", true, "tool_call_start", "tool", "tool", { type: "tool.start", toolName: "{{tool.name}}", toolId: "{{tool.id}}" }),
+          rule("tool-delta", true, "tool_call_delta", "tool", "tool", { type: "tool.input.delta", toolName: "{{tool.name}}", delta: "{{tool.inputDelta}}" }),
+          rule("tool-end", true, "tool_call_end", "tool", "tool", { type: "tool.end", toolName: "{{tool.name}}", status: "{{tool.status}}" })
+        ]
+      },
+      business: {
+        name: "业务流式 SSE",
+        desc: "输出 code/data/message 包裹，适合已有业务协议。",
+        doneEvent: "finish",
+        tags: ["chat", "error", "finish", "业务协议"],
+        rules: [
+          rule("chat", true, "delta", "message", "chat", { code: 0, data: { type: "answer.delta", content: "{{content}}" }, message: "ok" }),
+          rule("error", true, "error", "status", "error", { code: 500, data: null, message: "{{content}}" })
+        ]
+      }
+    };
+
+    const eventSamples = {
+      message: {
+        provider: "claude",
+        eventId: "evt_000018",
+        sequence: 18,
+        turnId: "turn_demo",
+        kind: "delta",
+        channel: "message",
+        role: "assistant",
+        content: "你好，我可以帮你把接口响应映射成目标 SSE。"
+      },
+      reasoning: {
+        provider: "claude",
+        eventId: "evt_000009",
+        sequence: 9,
+        turnId: "turn_demo",
+        kind: "delta",
+        channel: "reasoning",
+        role: "assistant",
+        content: "先判断目标页面消费的是 chat event，再替换 content 字段。"
+      },
+      tool: {
+        provider: "codex",
+        eventId: "evt_000011",
+        sequence: 11,
+        turnId: "turn_demo",
+        correlationId: "tool_demo_1",
+        kind: "tool_call_start",
+        channel: "tool",
+        tool: { id: "tool_demo_1", name: "Read", status: "started", inputDelta: "{\"path\":\"[redacted]\"}" },
+        content: "Tool started"
+      },
+      error: {
+        provider: "claude",
+        eventId: "evt_000020",
+        sequence: 20,
+        turnId: "turn_demo",
+        kind: "error",
+        channel: "status",
+        content: "renderer error: invalid SSE event name"
+      }
+    };
+
+    const kindOptions = ["lifecycle", "delta", "snapshot", "tool_call_start", "tool_call_delta", "tool_call_end", "tool_result", "tool_approval", "usage", "error", "done", "raw"];
+    const channelOptions = ["message", "reasoning", "tool", "status", "debug"];
+    let currentTemplate = "business";
+    let rules = structuredClone(templates[currentTemplate].rules);
+    let activeRuleIndex = 0;
+
+    const $ = (id) => document.getElementById(id);
+
+    function rule(id, enabled, kind, channel, event, data) {
+      return { id, enabled, match: { kind, channel }, emit: { protocol: "sse", event, data } };
+    }
+
+    function showToast(message) {
+      const toast = $("toast");
+      toast.textContent = message;
+      toast.classList.add("show");
+      window.clearTimeout(showToast.timer);
+      showToast.timer = window.setTimeout(() => toast.classList.remove("show"), 2200);
+    }
+
+    function renderTemplates() {
+      const grid = $("templateGrid");
+      grid.innerHTML = "";
+      Object.entries(templates).forEach(([key, item]) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "templateCard" + (key === currentTemplate ? " active" : "");
+        button.setAttribute("role", "listitem");
+        button.setAttribute("aria-pressed", key === currentTemplate ? "true" : "false");
+        button.innerHTML = `
+          <h3><span>${item.name}</span><span class="chip ${key === currentTemplate ? "success" : ""}">${key === currentTemplate ? "已选" : "可选"}</span></h3>
+          <p>${item.desc}</p>
+          <div class="chips">${item.tags.map((tag) => `<span class="chip">${tag}</span>`).join("")}</div>
+        `;
+        button.addEventListener("click", () => {
+          currentTemplate = key;
+          rules = structuredClone(item.rules);
+          activeRuleIndex = 0;
+          $("templateState").textContent = "当前：" + item.name;
+          $("doneEventValue").textContent = item.doneEvent;
+          renderAll();
+          showToast("已应用模板：" + item.name);
+        });
+        grid.appendChild(button);
+      });
+    }
+
+    function renderRules() {
+      const body = $("rulesBody");
+      body.innerHTML = "";
+      rules.forEach((item, index) => {
+        const tr = document.createElement("tr");
+        tr.className = "ruleRow";
+        tr.innerHTML = `
+          <td>
+            <label class="switch" aria-label="启用规则 ${item.id}">
+              <input type="checkbox" ${item.enabled ? "checked" : ""} data-index="${index}" data-field="enabled">
+              <span class="slider"></span>
+            </label>
+          </td>
+          <td>
+            <div class="ruleName">${item.id}</div>
+            <div class="ruleSub">${item.match.kind || "*"} / ${item.match.channel || "*"}</div>
+          </td>
+          <td>
+            <div style="display: grid; gap: 6px;">
+              <select aria-label="Kind" data-index="${index}" data-field="kind">${optionList(kindOptions, item.match.kind)}</select>
+              <select aria-label="Channel" data-index="${index}" data-field="channel">${optionList(channelOptions, item.match.channel)}</select>
+            </div>
+          </td>
+          <td><input type="text" aria-label="SSE event 名称" value="${escapeHtml(item.emit.event)}" data-index="${index}" data-field="event"></td>
+          <td><textarea aria-label="data JSON 模板" data-index="${index}" data-field="data">${escapeHtml(JSON.stringify(item.emit.data, null, 2))}</textarea></td>
+          <td>
+            <div style="display: grid; gap: 6px;">
+              <button class="btn small" type="button" data-action="detail" data-index="${index}">详情</button>
+              <button class="btn small" type="button" data-action="test" data-index="${index}">测试</button>
+            </div>
+          </td>
+        `;
+        body.appendChild(tr);
+      });
+
+      body.querySelectorAll("[data-field]").forEach((node) => {
+        node.addEventListener("change", onRuleInput);
+        if (node.tagName === "TEXTAREA" || node.tagName === "INPUT") {
+          node.addEventListener("input", onRuleInput);
+        }
+      });
+      body.querySelectorAll("[data-action='detail']").forEach((node) => node.addEventListener("click", () => openDrawer(Number(node.dataset.index))));
+      body.querySelectorAll("[data-action='test']").forEach((node) => node.addEventListener("click", () => {
+        activeRuleIndex = Number(node.dataset.index);
+        renderPreview();
+        showToast("已用模拟事件测试该规则");
+      }));
+
+      $("enabledCount").textContent = String(rules.filter((item) => item.enabled).length);
+    }
+
+    function onRuleInput(event) {
+      const target = event.currentTarget;
+      const index = Number(target.dataset.index);
+      const field = target.dataset.field;
+      const item = rules[index];
+      if (!item) return;
+      if (field === "enabled") item.enabled = target.checked;
+      if (field === "kind") item.match.kind = target.value;
+      if (field === "channel") item.match.channel = target.value;
+      if (field === "event") item.emit.event = target.value.trim();
+      if (field === "data") {
+        try {
+          item.emit.data = JSON.parse(target.value);
+          target.setAttribute("aria-invalid", "false");
+        } catch {
+          target.setAttribute("aria-invalid", "true");
+        }
+      }
+      renderExpertJson();
+      renderPreview();
+      $("enabledCount").textContent = String(rules.filter((ruleItem) => ruleItem.enabled).length);
+    }
+
+    function optionList(options, selected) {
+      return options.map((item) => `<option value="${item}" ${item === selected ? "selected" : ""}>${item}</option>`).join("");
+    }
+
+    function renderExpertJson() {
+      const value = JSON.stringify(rules, null, 2);
+      $("expertJson").value = value;
+      updateDangerHint(value);
+    }
+
+    function updateDangerHint(value) {
+      const hasDanger = /{{\s*(raw|data|tool\.input|tool\.output)\s*}}/.test(value);
+      $("dangerHint").style.display = hasDanger ? "flex" : "none";
+      $("blockedCount").textContent = hasDanger ? "1" : "0";
+    }
+
+    function renderPreview() {
+      const sample = eventSamples[$("eventSample").value];
+      const frameLines = [];
+      const matched = rules.filter((item) => item.enabled && matchRule(item, sample));
+      matched.forEach((item) => {
+        const validation = validateEventName(item.emit.event);
+        if (!validation.ok) {
+          frameLines.push(`# renderer error: ${validation.message}`);
+          return;
+        }
+        const data = applyTemplate(item.emit.data, sample);
+        frameLines.push(`event: ${item.emit.event}`);
+        frameLines.push(`data: ${JSON.stringify(data)}`);
+        frameLines.push("");
+      });
+      if (matched.length === 0) {
+        frameLines.push("# 没有规则命中当前模拟事件");
+        frameLines.push(`# kind=${sample.kind}, channel=${sample.channel}`);
+      }
+      const doneEvent = templates[currentTemplate].doneEvent;
+      if ($("eventSample").value !== "error") {
+        frameLines.push(`event: ${doneEvent}`);
+        frameLines.push(`data: ${JSON.stringify(doneData(doneEvent))}`);
+        frameLines.push("");
+      }
+      $("previewOutput").textContent = frameLines.join("\n");
+      $("frameCount").textContent = `${Math.max(1, matched.length + 1)} frames`;
+    }
+
+    function matchRule(item, sample) {
+      const kindMatch = !item.match.kind || item.match.kind === sample.kind;
+      const channelMatch = !item.match.channel || item.match.channel === sample.channel;
+      return kindMatch && channelMatch;
+    }
+
+    function doneData(doneEvent) {
+      if (doneEvent === "finish") {
+        return { code: 0, data: { status: "completed" }, message: "done" };
+      }
+      return { status: "completed" };
+    }
+
+    function applyTemplate(template, sample) {
+      if (typeof template === "string") {
+        return replaceVar(template, sample);
+      }
+      if (Array.isArray(template)) {
+        return template.map((item) => applyTemplate(item, sample));
+      }
+      if (template && typeof template === "object") {
+        return Object.fromEntries(Object.entries(template).map(([key, value]) => [key, applyTemplate(value, sample)]));
+      }
+      return template;
+    }
+
+    function replaceVar(value, sample) {
+      const exact = value.match(/^{{\s*([^}]+?)\s*}}$/);
+      if (exact) return readPath(sample, exact[1].trim()) ?? "";
+      return value.replace(/{{\s*([^}]+?)\s*}}/g, (_, path) => String(readPath(sample, path.trim()) ?? ""));
+    }
+
+    function readPath(obj, path) {
+      return path.split(".").reduce((acc, part) => acc == null ? undefined : acc[part], obj);
+    }
+
+    function validateEventName(name) {
+      if (!name) return { ok: false, message: "SSE event 不能为空" };
+      if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(name)) return { ok: false, message: "SSE event 只能包含字母、数字、下划线、点、冒号和短横线" };
+      return { ok: true };
+    }
+
+    function inferSample() {
+      const text = $("sampleInput").value;
+      const eventMatches = Array.from(text.matchAll(/^event:\s*(.+)$/gm)).map((match) => match[1].trim());
+      const dataMatches = Array.from(text.matchAll(/^data:\s*(.+)$/gm)).map((match) => match[1].trim());
+      const messageEvent = eventMatches.find((item) => !/done|finish|complete/i.test(item)) || eventMatches[0] || "";
+      const doneEvent = eventMatches.find((item) => /done|finish|complete/i.test(item)) || templates[currentTemplate].doneEvent;
+      let contentKey = "content";
+      for (const raw of dataMatches) {
+        try {
+          const parsed = JSON.parse(raw);
+          const key = findContentKey(parsed);
+          if (key) {
+            contentKey = key;
+            break;
+          }
+        } catch {}
+      }
+      $("inferResult").innerHTML = `
+        <div class="chips">
+          <span class="chip info">message event: ${escapeHtml(messageEvent || "未识别")}</span>
+          <span class="chip info">content path: data.${escapeHtml(contentKey)}</span>
+          <span class="chip info">done event: ${escapeHtml(doneEvent || "未识别")}</span>
+        </div>
+        <div style="margin-top: 10px; color: var(--text-soft);">保守推断只提取 event 名和常见文本字段，复杂结构仍建议在普通模式中确认。</div>
+      `;
+      if (messageEvent && rules[0]) {
+        rules[0].emit.event = messageEvent;
+        $("doneEventValue").textContent = doneEvent;
+        templates[currentTemplate].doneEvent = doneEvent;
+        renderRules();
+        renderExpertJson();
+        renderPreview();
+      }
+    }
+
+    function findContentKey(value, prefix = "") {
+      if (!value || typeof value !== "object") return "";
+      for (const key of ["content", "text", "delta", "message"]) {
+        if (Object.prototype.hasOwnProperty.call(value, key)) return prefix ? `${prefix}.${key}` : key;
+      }
+      for (const [key, child] of Object.entries(value)) {
+        const found = findContentKey(child, prefix ? `${prefix}.${key}` : key);
+        if (found) return found;
+      }
+      return "";
+    }
+
+    function openDrawer(index = activeRuleIndex) {
+      activeRuleIndex = index;
+      const item = rules[index] || rules[0];
+      fillSelect($("drawerKind"), kindOptions, item.match.kind);
+      fillSelect($("drawerChannel"), channelOptions, item.match.channel);
+      $("drawerRuleId").value = item.id;
+      $("drawerEventName").value = item.emit.event;
+      $("drawerData").value = JSON.stringify(item.emit.data, null, 2);
+      $("drawerBackdrop").classList.add("open");
+      $("drawer").classList.add("open");
+      $("drawer").setAttribute("aria-hidden", "false");
+      $("closeDrawer").focus();
+    }
+
+    function closeDrawer() {
+      $("drawerBackdrop").classList.remove("open");
+      $("drawer").classList.remove("open");
+      $("drawer").setAttribute("aria-hidden", "true");
+      $("openDrawer").focus();
+    }
+
+    function applyDrawer() {
+      const item = rules[activeRuleIndex];
+      if (!item) return;
+      try {
+        item.id = $("drawerRuleId").value.trim() || item.id;
+        item.emit.event = $("drawerEventName").value.trim();
+        item.match.kind = $("drawerKind").value;
+        item.match.channel = $("drawerChannel").value;
+        item.emit.data = JSON.parse($("drawerData").value);
+        renderRules();
+        renderExpertJson();
+        renderPreview();
+        closeDrawer();
+        showToast("规则详情已应用");
+      } catch {
+        showToast("data JSON 无法解析，请检查格式");
+      }
+    }
+
+    function fillSelect(select, options, selected) {
+      select.innerHTML = optionList(options, selected);
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function renderAll() {
+      renderTemplates();
+      renderRules();
+      renderExpertJson();
+      renderPreview();
+    }
+
+    $("eventsToggle").addEventListener("click", () => {
+      const panel = $("eventsPanel");
+      const expanded = $("eventsToggle").getAttribute("aria-expanded") === "true";
+      $("eventsToggle").setAttribute("aria-expanded", String(!expanded));
+      panel.hidden = expanded;
+      $("eventsToggleText").textContent = expanded ? "展开" : "收起";
+    });
+
+    $("simpleTab").addEventListener("click", () => {
+      $("simpleTab").setAttribute("aria-selected", "true");
+      $("expertTab").setAttribute("aria-selected", "false");
+      $("simpleMode").hidden = false;
+      $("expertMode").hidden = true;
+    });
+
+    $("expertTab").addEventListener("click", () => {
+      $("simpleTab").setAttribute("aria-selected", "false");
+      $("expertTab").setAttribute("aria-selected", "true");
+      $("simpleMode").hidden = true;
+      $("expertMode").hidden = false;
+      updateDangerHint($("expertJson").value);
+    });
+
+    $("expertJson").addEventListener("input", (event) => updateDangerHint(event.currentTarget.value));
+    $("applyExpert").addEventListener("click", () => {
+      try {
+        const next = JSON.parse($("expertJson").value);
+        if (!Array.isArray(next)) throw new Error("streamMappings 必须是数组");
+        rules = next;
+        renderRules();
+        renderPreview();
+        showToast("专家 JSON 已应用");
+      } catch (error) {
+        showToast("JSON 校验失败：" + error.message);
+      }
+    });
+    $("formatExpert").addEventListener("click", () => {
+      try {
+        $("expertJson").value = JSON.stringify(JSON.parse($("expertJson").value), null, 2);
+        updateDangerHint($("expertJson").value);
+      } catch {
+        showToast("当前 JSON 无法格式化");
+      }
+    });
+
+    $("addRule").addEventListener("click", () => {
+      rules.push(rule("custom-" + String(rules.length + 1).padStart(2, "0"), true, "delta", "message", "message", { content: "{{content}}" }));
+      renderAll();
+      showToast("已新增映射规则");
+    });
+
+    $("copyRules").addEventListener("click", async () => {
+      await copyText(JSON.stringify({ streamMappings: rules, streamDoneEvent: { event: templates[currentTemplate].doneEvent, data: doneData(templates[currentTemplate].doneEvent) } }, null, 2));
+    });
+    $("copyPreview").addEventListener("click", async () => copyText($("previewOutput").textContent));
+    $("drawerCopy").addEventListener("click", async () => copyText(JSON.stringify(rules[activeRuleIndex], null, 2)));
+    $("inferBtn").addEventListener("click", inferSample);
+    $("eventSample").addEventListener("change", renderPreview);
+    $("openDrawer").addEventListener("click", () => openDrawer(activeRuleIndex));
+    $("closeDrawer").addEventListener("click", closeDrawer);
+    $("drawerBackdrop").addEventListener("click", closeDrawer);
+    $("applyDrawer").addEventListener("click", applyDrawer);
+    $("saveBtn").addEventListener("click", () => showToast("原型提示：保存前应展示配置摘要与风险确认"));
+    $("validateBtn").addEventListener("click", () => {
+      const invalid = rules.map((item) => validateEventName(item.emit.event)).find((item) => !item.ok);
+      showToast(invalid ? "校验失败：" + invalid.message : "校验通过：事件名、JSON 与预览均可用");
+    });
+
+    ["toolPolicy", "rawPolicy", "persistFrames"].forEach((id) => {
+      $(id).addEventListener("change", () => {
+        const risky = $("toolPolicy").checked || $("rawPolicy").checked || $("persistFrames").checked;
+        $("policyWarning").style.display = risky ? "flex" : "none";
+      });
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && $("drawer").classList.contains("open")) closeDrawer();
+    });
+
+    async function copyText(text) {
+      try {
+        await navigator.clipboard.writeText(text);
+        showToast("已复制到剪贴板");
+      } catch {
+        showToast("当前浏览器不允许直接复制，请手动选择内容");
+      }
+    }
+
+    renderAll();
+  </script>
+</body>
+</html>

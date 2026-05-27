@@ -7,3 +7,6 @@ export * from "./responseTemplate";
 export * from "./responseTemplates";
 export * from "./diagnostics";
 export * from "./redaction";
+export * from "./streamEvents";
+export * from "./streamMapping";
+export * from "./messageProtocols";

@@ -2,11 +2,24 @@ import React, { useCallback, useState } from "react";
 import { AlertTriangle, ChevronDown, ChevronRight, FlaskConical, FolderOpen, Save, Trash2, Wand2 } from "lucide-react";
 import { inferResponseTemplateFromSample, type HttpMethod } from "@proxy2localai/shared";
 import type { ProfileDraft, ProfileSection } from "../profileForm";
-import { applyResponseModeToDraft, applyTemplateToDraft, getDefaultExpandedSections } from "../profileForm";
+import {
+  applyResponseModeToDraft,
+  applyTemplateToDraft,
+  createStreamMappingPreview,
+  getDefaultExpandedSections,
+  inferStreamMappingFromSample,
+  MESSAGE_RETURN_STRUCTURE_OPTIONS
+} from "../profileForm";
 import { ResponseTemplatePicker } from "./ResponseTemplatePicker";
 import { Button, Field, Panel, Pill, ToggleSwitch, cx } from "../../ui/components";
 
 const METHODS: HttpMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+const STREAM_MAPPING_TEMPLATE_IDS = [
+  { id: "generic_chat_sse", label: "通用聊天" },
+  { id: "chat_reasoning_sse", label: "推理过程" },
+  { id: "tool_status_sse", label: "工具状态" },
+  { id: "business_stream_sse", label: "业务协议" }
+] as const;
 
 interface ProfileEditorProps {
   draft: ProfileDraft;
@@ -57,6 +70,19 @@ export function ProfileEditor({
   const [expandedSections, setExpandedSections] = useState<ProfileSection[]>(
     () => getDefaultExpandedSections(draft.setupMode)
   );
+  const [mappingSample, setMappingSample] = useState("");
+  const mappingPreview = React.useMemo(() => createStreamMappingPreview(draft, {
+    provider: draft.provider === "codex" ? "codex" : draft.provider === "custom" ? "custom" : "claude",
+    eventId: "evt_preview_001",
+    sequence: 1,
+    kind: "delta",
+    channel: "message",
+    role: "assistant",
+    content: "你好"
+  }), [draft]);
+  const selectedMessageReturnStructure = MESSAGE_RETURN_STRUCTURE_OPTIONS.find(
+    (option) => option.value === draft.messageReturnStructure
+  ) ?? MESSAGE_RETURN_STRUCTURE_OPTIONS[0];
 
   const toggleSection = (section: ProfileSection) => {
     setExpandedSections((current) =>
@@ -103,6 +129,15 @@ export function ProfileEditor({
       onChangeDraft("customJsonTemplate", inferred.customJsonTemplate);
     }
   }, [draft, onChangeDraft]);
+
+  const handleInferStreamMapping = useCallback(() => {
+    if (!mappingSample.trim()) {
+      return;
+    }
+    const inferred = inferStreamMappingFromSample(mappingSample);
+    onChangeDraft("streamMappings", JSON.stringify(inferred.streamMappings, null, 2));
+    onChangeDraft("streamDoneEvent", JSON.stringify(inferred.streamDoneEvent, null, 2));
+  }, [mappingSample, onChangeDraft]);
 
   const handleResponseModeChange = useCallback((responseMode: ProfileDraft["responseMode"]) => {
     const next = applyResponseModeToDraft(draft, responseMode);
@@ -207,6 +242,25 @@ export function ProfileEditor({
                 <option value="mapped_sse">映射 SSE</option>
               </select>
             </Field>
+            <Field label="消息返回结构" hint={selectedMessageReturnStructure?.description}>
+              <select
+                value={draft.messageReturnStructure}
+                onChange={(e) => onChangeDraft("messageReturnStructure", e.target.value as ProfileDraft["messageReturnStructure"])}
+              >
+                {MESSAGE_RETURN_STRUCTURE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs leading-5 text-console-subtle">
+                Bridge 会按所选结构抽取请求消息并包装响应；自定义 JSON 和映射 SSE 仍以模板配置优先。
+              </p>
+              {selectedMessageReturnStructure?.routeRequired && (
+                <Pill tone="warning">需开启路由转换</Pill>
+              )}
+            </Field>
+          </div>
+
+          <div className="grid gap-3">
             <Field label="本地 AI 配置项目路径">
               <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
                 <input readOnly value={draft.projectDir} placeholder="点击选择或粘贴本地绝对路径" onClick={onOpenPathDialog} onFocus={onOpenPathDialog} />
@@ -302,12 +356,68 @@ export function ProfileEditor({
           )}
           {draft.responseMode === "mapped_sse" && (
             <div className="grid gap-3">
+              <div className="grid gap-2 rounded-console border border-console-border bg-console-surface p-3">
+                <strong className="text-sm text-console-strong">响应映射模板</strong>
+                <div className="flex flex-wrap gap-2">
+                  {STREAM_MAPPING_TEMPLATE_IDS.map((template) => (
+                    <Button key={template.id} type="button" variant="secondary" size="sm" onClick={() => handleTemplateSelect(template.id)}>
+                      {template.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <Field label="Stream Codec" hint="把 provider 原始 JSONL 标准化为 message/reasoning/tool/status/error 等事件。">
+                <select value={draft.streamCodec} onChange={(e) => onChangeDraft("streamCodec", e.target.value as ProfileDraft["streamCodec"])}>
+                  <option value="claude-code-v1">Claude Code v1</option>
+                  <option value="codex-cli-v1">Codex CLI v1</option>
+                  <option value="custom-jsonl-v1">Custom JSONL v1</option>
+                </select>
+              </Field>
+
+              <Field label="Stream Mappings JSON" hint="匹配标准事件并输出目标 SSE event/data；默认不允许 raw/data/tool.input/tool.output。">
+                <textarea value={draft.streamMappings} rows={10} onChange={(e) => onChangeDraft("streamMappings", e.target.value)} />
+              </Field>
+              <Field label="Done Event JSON" hint="Provider 正常结束时追加的完成事件，格式为 { event, data }。">
+                <textarea value={draft.streamDoneEvent} rows={4} onChange={(e) => onChangeDraft("streamDoneEvent", e.target.value)} />
+              </Field>
+              <div className="grid gap-2 rounded-console border border-console-border bg-console-surface p-3">
+                <div className="grid gap-1">
+                  <strong className="text-sm text-console-strong">SSE 预览</strong>
+                  <span className="text-xs text-console-subtle">使用模拟 message 事件预览最终输出。</span>
+                </div>
+                {mappingPreview.ok ? (
+                  <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-anywhere rounded-console-sm bg-console-muted p-3 font-mono text-xs text-console-text">{mappingPreview.output}</pre>
+                ) : (
+                  <p className="break-anywhere rounded-console-sm bg-console-danger-soft p-3 text-sm text-console-danger">{mappingPreview.error}</p>
+                )}
+              </div>
+              <div className="grid gap-2 rounded-console border border-console-border bg-console-surface p-3">
+                <Field label="从目标 SSE 样例推断">
+                  <textarea
+                    value={mappingSample}
+                    rows={4}
+                    placeholder={'event: chat\ndata: {"type":"answer.delta","content":"hello"}\n\nevent: finish\ndata: {"status":"completed"}'}
+                    onChange={(e) => setMappingSample(e.target.value)}
+                  />
+                </Field>
+                <div>
+                  <Button type="button" variant="secondary" size="sm" icon={<Wand2 size={16} aria-hidden="true" />} disabled={!mappingSample.trim()} onClick={handleInferStreamMapping}>
+                    推断映射
+                  </Button>
+                </div>
+              </div>
+              <details className="rounded-console border border-console-border bg-console-surface p-3">
+                <summary className="cursor-pointer text-sm font-bold text-console-strong">旧版 source=event fallback</summary>
+                <div className="mt-3 grid gap-3">
               <Field label="SSE 事件映射" hint="每行一个 source=targetEvent；只返回已映射的 provider 事件。">
                 <textarea value={draft.sseEventMappings} placeholder={"reasoning=reasoning\nmessage=message"} onChange={(e) => onChangeDraft("sseEventMappings", e.target.value)} />
               </Field>
               <Field label="done 事件 JSON" hint="请求结束时作为 event:done 的 data 返回。">
                 <textarea value={draft.sseDoneEvent} placeholder='{"conversationId":"","status":"completed"}' onChange={(e) => onChangeDraft("sseDoneEvent", e.target.value)} />
               </Field>
+                </div>
+              </details>
             </div>
           )}
         </Panel>

@@ -3,10 +3,13 @@ import type { AppConfig, ProxyProfile } from "@proxy2localai/shared";
 import {
   applyResponseModeToDraft,
   applyTemplateToDraft,
+  createStreamMappingPreview,
   createBlankProfile,
   createWizardProfileFromCurl,
   draftToProfile,
+  inferStreamMappingFromSample,
   getDefaultExpandedSections,
+  MESSAGE_RETURN_STRUCTURE_OPTIONS,
   getRecommendedTemplateCards,
   getRecommendedTemplateId,
   profileToDraft,
@@ -24,6 +27,7 @@ const baseProfile: ProxyProfile = {
   projectDir: "C:/project/demoProject/proxy2LocalAI",
   provider: "claude",
   responseMode: "stream",
+  messageReturnStructure: "anthropic_messages",
   allowDangerousCli: false,
   enableConversationMemory: false,
   timeoutMs: 0,
@@ -111,6 +115,92 @@ describe("profile 表单配置合并", () => {
   });
 });
 
+describe("stream mapping draft helpers", () => {
+  test("选择业务流式 SSE 模板时写入 streamMappings 和 done 配置", () => {
+    const draft = createBlankProfile("C:/project");
+    const next = applyTemplateToDraft(draft, "business_stream_sse");
+
+    expect(next.responseMode).toBe("mapped_sse");
+    expect(next.responseTemplateId).toBe("business_stream_sse");
+    expect(next.streamMappings).toContain("\"event\": \"chat\"");
+    expect(next.streamDoneEvent).toContain("\"event\": \"finish\"");
+  });
+
+  test("保存 mapped_sse 草稿时优先写入新 streamMappings 字段并保留旧字段 fallback", () => {
+    const draft = applyTemplateToDraft(createBlankProfile("C:/project"), "business_stream_sse");
+    const profile = draftToProfile(draft);
+
+    expect(profile.streamMappings?.[0]).toMatchObject({
+      id: "chat",
+      match: { kind: "delta", channel: "message" },
+      emit: { event: "chat" }
+    });
+    expect(profile.streamDoneEvent).toEqual({
+      event: "finish",
+      data: { code: 0, data: { status: "completed" }, message: "done" }
+    });
+    expect(profile.sseEventMappings?.[0]).toEqual({ source: "message", targetEvent: "chat" });
+  });
+
+  test("根据映射规则和模拟事件预览最终 SSE 输出", () => {
+    const draft = applyTemplateToDraft(createBlankProfile("C:/project"), "business_stream_sse");
+    const preview = createStreamMappingPreview(draft, {
+      provider: "claude",
+      eventId: "evt_000001",
+      sequence: 1,
+      kind: "delta",
+      channel: "message",
+      content: "你好"
+    });
+
+    expect(preview.ok).toBe(true);
+    expect(preview.output).toContain('event: chat\ndata: {"code":0,"data":{"type":"answer.delta","content":"你好"},"message":"ok"}');
+  });
+
+  test("预览复用 Bridge 的 tool 脱敏和 donePolicy，不让禁用的 tool 事件泄漏", () => {
+    const draft = {
+      ...createBlankProfile("C:/project"),
+      responseMode: "mapped_sse" as const,
+      streamMappings: JSON.stringify([
+        {
+          id: "tool-delta",
+          enabled: true,
+          match: { kind: "tool_call_delta", channel: "tool" },
+          emit: { protocol: "sse", event: "tool", data: { delta: "{{tool.inputDelta}}" } }
+        }
+      ], null, 2),
+      streamDonePolicy: JSON.stringify({ onProviderDone: "none", onProviderError: "emit_failed", onRendererError: "skip_frame", onClientAbort: "none" })
+    };
+
+    const preview = createStreamMappingPreview(draft, {
+      provider: "claude",
+      eventId: "evt_tool",
+      sequence: 1,
+      kind: "tool_call_delta",
+      channel: "tool",
+      tool: { name: "Read", inputDelta: '{"path":"C:/secret/file.ts"}', status: "running" }
+    });
+
+    expect(preview.ok).toBe(true);
+    expect(preview.output).toBe("");
+  });
+
+  test("从目标 SSE 样例保守推断 message event、content 模板和 done event", () => {
+    const inferred = inferStreamMappingFromSample(
+      'event: chat\ndata: {"type":"answer.delta","content":"hello"}\n\nevent: finish\ndata: {"status":"completed"}\n\n'
+    );
+
+    expect(inferred.streamMappings[0]).toMatchObject({
+      match: { kind: "delta", channel: "message" },
+      emit: {
+        event: "chat",
+        data: { type: "answer.delta", content: "{{content}}" }
+      }
+    });
+    expect(inferred.streamDoneEvent.event).toBe("finish");
+  });
+});
+
 describe("applyTemplateToDraft", () => {
   test("选择通用 SSE 模板时更新返回类型和映射字段", () => {
     const draft = createBlankProfile();
@@ -164,5 +254,64 @@ describe("applyTemplateToDraft", () => {
     ]);
     expect(cards.find((card) => card.id === "generic_sse")?.recommended).toBe(true);
     expect(cards.find((card) => card.id === "generic_sse")?.recommendReason).toContain("映射 SSE");
+  });
+});
+
+describe("消息返回结构表单字段", () => {
+  test("新建草稿默认使用 Anthropic Messages 原生结构", () => {
+    const draft = createBlankProfile();
+
+    expect(draft.messageReturnStructure).toBe("anthropic_messages");
+  });
+
+  test("向导创建的草稿默认使用 Anthropic Messages 原生结构", () => {
+    const draft = createWizardProfileFromCurl(
+      "curl 'https://api.example.com/v1/messages' --json '{\"messages\":[]}'",
+      "C:/project/demoProject/proxy2LocalAI"
+    );
+
+    expect(draft.messageReturnStructure).toBe("anthropic_messages");
+  });
+
+  test("草稿保存和回填时保留用户选择的非原生结构", () => {
+    const draft = {
+      ...createBlankProfile("C:/project/demoProject/proxy2LocalAI"),
+      messageReturnStructure: "openai_chat_completions" as const
+    };
+
+    const profile = draftToProfile(draft);
+    const nextDraft = profileToDraft(profile);
+
+    expect(profile.messageReturnStructure).toBe("openai_chat_completions");
+    expect(nextDraft.messageReturnStructure).toBe("openai_chat_completions");
+  });
+
+  test("结构选项默认推荐 Anthropic，非原生项显示需开启路由转换", () => {
+    expect(MESSAGE_RETURN_STRUCTURE_OPTIONS).toEqual([
+      expect.objectContaining({
+        value: "anthropic_messages",
+        label: "Anthropic Messages（原生，推荐）",
+        recommended: true,
+        routeRequired: false
+      }),
+      expect.objectContaining({
+        value: "openai_chat_completions",
+        label: "OpenAI Chat Completions（需开启路由转换）",
+        recommended: false,
+        routeRequired: true
+      }),
+      expect.objectContaining({
+        value: "openai_responses",
+        label: "OpenAI Responses API（需开启路由转换）",
+        recommended: false,
+        routeRequired: true
+      }),
+      expect.objectContaining({
+        value: "gemini_generate_content",
+        label: "Gemini Native generateContent（需开启路由转换）",
+        recommended: false,
+        routeRequired: true
+      })
+    ]);
   });
 });

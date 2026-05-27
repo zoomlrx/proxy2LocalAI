@@ -13,6 +13,7 @@ function profile(id: string, enabled: boolean) {
     projectDir: "",
     provider: "claude" as const,
     responseMode: "stream" as const,
+    messageReturnStructure: "anthropic_messages" as const,
     allowDangerousCli: false,
     enableConversationMemory: false,
     timeoutMs: 0,

@@ -3,7 +3,14 @@ import { CheckCircle2, X } from "lucide-react";
 import { parseCurlCommand, type AppConfig } from "@proxy2localai/shared";
 import { getBridgeHealth, testBridgeProfileDraft } from "../../lib/bridgeApi";
 import type { CurlSummary, ProfileDraft } from "../profileForm";
-import { createWizardProfileFromCurl, draftToProfile, getRecommendedTemplateId, summarizeCurlCommand, upsertProfile } from "../profileForm";
+import {
+  createWizardProfileFromCurl,
+  draftToProfile,
+  getRecommendedTemplateId,
+  MESSAGE_RETURN_STRUCTURE_OPTIONS,
+  summarizeCurlCommand,
+  upsertProfile
+} from "../profileForm";
 import { Button, Field, Pill, StatusDot, cx } from "../../ui/components";
 
 type WizardStep = "bridge" | "curl" | "ai" | "path" | "format" | "done";
@@ -42,12 +49,16 @@ export function CreateProxyWizard({ config, onComplete, onCancel, setStatus }: C
   const [projectDir, setProjectDir] = useState(config.profiles[0]?.projectDir ?? "");
   const [provider, setProvider] = useState<"claude" | "codex">("claude");
   const [responseMode, setResponseMode] = useState<"stream" | "block" | "custom_json" | "mapped_sse">("stream");
+  const [messageReturnStructure, setMessageReturnStructure] = useState<ProfileDraft["messageReturnStructure"]>("anthropic_messages");
   const [bridgeOnline, setBridgeOnline] = useState<boolean | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; stages: Array<{ id: string; status: string; message?: string }> } | null>(null);
   const [draft, setDraft] = useState<ProfileDraft | null>(null);
   const [curlSummary, setCurlSummary] = useState<CurlSummary | null>(null);
 
   const stepIndex = STEPS.findIndex((item) => item.id === step);
+  const selectedMessageReturnStructure = MESSAGE_RETURN_STRUCTURE_OPTIONS.find(
+    (option) => option.value === messageReturnStructure
+  ) ?? MESSAGE_RETURN_STRUCTURE_OPTIONS[0];
 
   const goNext = useCallback(() => {
     const next = STEPS[stepIndex + 1]?.id;
@@ -94,13 +105,14 @@ export function CreateProxyWizard({ config, onComplete, onCancel, setStatus }: C
       const wizardDraft = createWizardProfileFromCurl(curlText, projectDir);
       wizardDraft.provider = provider;
       wizardDraft.responseMode = responseMode;
+      wizardDraft.messageReturnStructure = messageReturnStructure;
       wizardDraft.responseTemplateId = getRecommendedTemplateId(responseMode);
       setDraft(wizardDraft);
       setStep("done");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "创建配置失败");
     }
-  }, [curlText, projectDir, provider, responseMode, setStatus]);
+  }, [curlText, projectDir, provider, responseMode, messageReturnStructure, setStatus]);
 
   const saveAndTest = useCallback(async () => {
     if (!draft) return;
@@ -268,6 +280,20 @@ export function CreateProxyWizard({ config, onComplete, onCancel, setStatus }: C
                   </label>
                 ))}
               </div>
+              <Field label="消息返回结构" hint={selectedMessageReturnStructure?.description}>
+                <select
+                  value={messageReturnStructure}
+                  onChange={(e) => setMessageReturnStructure(e.target.value as ProfileDraft["messageReturnStructure"])}
+                >
+                  {MESSAGE_RETURN_STRUCTURE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs leading-5 text-console-subtle">
+                  Bridge 会按所选结构抽取请求消息并包装响应；自定义 JSON 和映射 SSE 仍以模板配置优先。
+                </p>
+                {selectedMessageReturnStructure?.routeRequired && <Pill tone="warning">需开启路由转换</Pill>}
+              </Field>
               <div className="flex flex-wrap gap-2">
                 <Button type="button" variant="secondary" onClick={goBack}>上一步</Button>
                 <Button type="button" onClick={generateDraft}>下一步</Button>
@@ -287,6 +313,7 @@ export function CreateProxyWizard({ config, onComplete, onCancel, setStatus }: C
                   <div className="grid grid-cols-[82px_minmax(0,1fr)] gap-2"><dt className="font-semibold text-console-subtle">目标</dt><dd className="truncate">{draft.targetOrigin}{draft.targetPath}</dd></div>
                   <div className="grid grid-cols-[82px_minmax(0,1fr)] gap-2"><dt className="font-semibold text-console-subtle">AI 工具</dt><dd>{provider === "claude" ? "Claude Code" : "Codex"}</dd></div>
                   <div className="grid grid-cols-[82px_minmax(0,1fr)] gap-2"><dt className="font-semibold text-console-subtle">返回格式</dt><dd>{responseMode}</dd></div>
+                  <div className="grid grid-cols-[82px_minmax(0,1fr)] gap-2"><dt className="font-semibold text-console-subtle">消息结构</dt><dd>{MESSAGE_RETURN_STRUCTURE_OPTIONS.find((option) => option.value === draft.messageReturnStructure)?.label ?? draft.messageReturnStructure}</dd></div>
                 </dl>
               )}
               {testResult && (

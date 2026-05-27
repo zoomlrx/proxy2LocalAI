@@ -16,6 +16,7 @@ const config: AppConfig = {
       projectDir: "",
       provider: "claude",
       responseMode: "stream",
+      messageReturnStructure: "anthropic_messages",
       allowDangerousCli: false,
       enableConversationMemory: false,
       timeoutMs: 0,
