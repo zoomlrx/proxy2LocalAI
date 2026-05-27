@@ -115,9 +115,16 @@ export function StatusDot({ tone = "default", className }: { tone?: Tone; classN
 
 interface ToggleSwitchProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   checked: boolean;
+  tone?: "primary" | "success" | "warning";
 }
 
-export function ToggleSwitch({ checked, className, children, ...props }: ToggleSwitchProps) {
+const switchCheckedStyles: Record<NonNullable<ToggleSwitchProps["tone"]>, string> = {
+  primary: "bg-console-primary",
+  success: "bg-console-success",
+  warning: "bg-console-warning"
+};
+
+export function ToggleSwitch({ checked, tone = "primary", className, children, ...props }: ToggleSwitchProps) {
   return (
     <button
       {...props}
@@ -125,15 +132,15 @@ export function ToggleSwitch({ checked, className, children, ...props }: ToggleS
       role="switch"
       aria-checked={checked}
       className={cx(
-        "relative inline-flex h-[22px] w-[38px] shrink-0 items-center rounded-full border border-transparent transition-colors duration-150",
-        checked ? "bg-console-primary" : "bg-console-border-strong",
+        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-transparent transition-colors duration-150 focus-visible:shadow-[0_0_0_2px_rgba(15,107,95,0.28)]",
+        checked ? switchCheckedStyles[tone] : "bg-console-border-strong",
         className
       )}
     >
       <span
         className={cx(
-          "absolute h-4 w-4 rounded-full bg-white shadow-sm transition-[left] duration-150",
-          checked ? "left-[19px]" : "left-[3px]"
+          "absolute left-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-150",
+          checked && "translate-x-4"
         )}
       />
       {children && <span className="sr-only">{children}</span>}

@@ -153,32 +153,22 @@ export function ProfileEditor({
       event.preventDefault();
       onSave();
     }}>
-      <Panel className="grid gap-3">
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-          <div className="min-w-0">
-            <h2 className="text-base font-bold text-console-strong">配置编辑</h2>
-            <p className="mt-1 text-sm leading-6 text-console-subtle">优先维护基础字段；高级和专家项按需展开。</p>
+      {isCreating && (
+        <Panel className="grid gap-3">
+          <Field label="粘贴 cURL 配置">
+            <textarea
+              value={curlText}
+              placeholder="curl 'https://api.example.com/v1/chat/completions' -X POST --data-raw '{...}'"
+              onChange={(event) => onChangeCurlText(event.target.value)}
+            />
+          </Field>
+          <div>
+            <Button type="button" variant="secondary" icon={<Wand2 size={16} aria-hidden="true" />} onClick={onFillFromCurl}>
+              从 cURL 填充
+            </Button>
           </div>
-          <Pill tone={draft.enabled ? "success" : "default"}>{draft.enabled ? "启用" : "停用"}</Pill>
-        </div>
-
-        {isCreating && (
-          <div className="grid gap-3 rounded-console border border-console-border bg-console-muted p-3">
-            <Field label="粘贴 cURL 配置">
-              <textarea
-                value={curlText}
-                placeholder="curl 'https://api.example.com/v1/chat/completions' -X POST --data-raw '{...}'"
-                onChange={(event) => onChangeCurlText(event.target.value)}
-              />
-            </Field>
-            <div>
-              <Button type="button" variant="secondary" icon={<Wand2 size={16} aria-hidden="true" />} onClick={onFillFromCurl}>
-                从 cURL 填充
-              </Button>
-            </div>
-          </div>
-        )}
-      </Panel>
+        </Panel>
+      )}
 
       <SectionToggle title="基础配置" hint="新用户默认只需要维护这些字段" expanded={isExpanded("basic")} onToggle={() => toggleSection("basic")} />
       {isExpanded("basic") && (
@@ -242,22 +232,6 @@ export function ProfileEditor({
                 <option value="mapped_sse">映射 SSE</option>
               </select>
             </Field>
-            <Field label="消息返回结构" hint={selectedMessageReturnStructure?.description}>
-              <select
-                value={draft.messageReturnStructure}
-                onChange={(e) => onChangeDraft("messageReturnStructure", e.target.value as ProfileDraft["messageReturnStructure"])}
-              >
-                {MESSAGE_RETURN_STRUCTURE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-              <p className="mt-1 text-xs leading-5 text-console-subtle">
-                Bridge 会按所选结构抽取请求消息并包装响应；自定义 JSON 和映射 SSE 仍以模板配置优先。
-              </p>
-              {selectedMessageReturnStructure?.routeRequired && (
-                <Pill tone="warning">需开启路由转换</Pill>
-              )}
-            </Field>
           </div>
 
           <div className="grid gap-3">
@@ -271,26 +245,40 @@ export function ProfileEditor({
             </Field>
           </div>
 
-          <Field label="提示词">
-            <textarea value={draft.prompt} onChange={(e) => onChangeDraft("prompt", e.target.value)} />
-          </Field>
-
           <details className="rounded-console border border-console-border bg-console-surface p-3">
-            <summary className="cursor-pointer text-sm font-bold text-console-strong">返回模板</summary>
-            <div className="mt-3">
-              <ResponseTemplatePicker draft={draft} onSelect={handleTemplateSelect} onInferFromSample={handleInferFromSample} />
-            </div>
+            <summary className="cursor-pointer text-sm font-bold text-console-strong">
+              提示词（可选）{draft.prompt.trim() ? " · 已配置" : ""}
+            </summary>
+            <Field label="提示词" className="mt-3">
+              <textarea value={draft.prompt} onChange={(e) => onChangeDraft("prompt", e.target.value)} />
+            </Field>
           </details>
+
+          {(draft.responseMode === "custom_json" || draft.responseMode === "mapped_sse") && (
+            <details className="rounded-console border border-console-border bg-console-surface p-3">
+              <summary className="cursor-pointer text-sm font-bold text-console-strong">返回模板</summary>
+              <div className="mt-3">
+                <ResponseTemplatePicker draft={draft} onSelect={handleTemplateSelect} onInferFromSample={handleInferFromSample} />
+              </div>
+            </details>
+          )}
         </Panel>
       )}
 
       <SectionToggle title="高级配置" hint="超时、体积上限、上下文提取和多轮记忆" expanded={isExpanded("advanced")} onToggle={() => toggleSection("advanced")} />
       {isExpanded("advanced") && (
         <Panel className="grid gap-4 bg-console-muted">
-          <label className="flex items-center gap-2 text-sm font-semibold text-console-text">
-            <input type="checkbox" checked={draft.enableConversationMemory} onChange={(e) => onChangeDraft("enableConversationMemory", e.target.checked)} />
-            启用多轮上下文记忆
-          </label>
+          <div className="grid gap-3 rounded-console-sm border border-console-border bg-console-surface p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+            <div className="min-w-0">
+              <strong className="block text-sm text-console-strong">启用多轮上下文记忆</strong>
+              <small className="mt-1 block text-xs leading-5 text-console-subtle">开启后会把同一会话的上下文追加到本地 AI 输入。</small>
+            </div>
+            <ToggleSwitch
+              checked={draft.enableConversationMemory}
+              aria-label={draft.enableConversationMemory ? "关闭多轮上下文记忆" : "启用多轮上下文记忆"}
+              onClick={() => onChangeDraft("enableConversationMemory", !draft.enableConversationMemory)}
+            />
+          </div>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="超时 ms" hint="0 表示不限时。">
               <input type="number" min="0" value={draft.timeoutMs} onChange={(e) => onChangeDraft("timeoutMs", Number(e.target.value))} />
@@ -305,6 +293,26 @@ export function ProfileEditor({
           <Field label="正则标记">
             <input value={draft.contextRegexFlags} placeholder="s" onChange={(e) => onChangeDraft("contextRegexFlags", e.target.value)} />
           </Field>
+          <details className="rounded-console border border-console-border bg-console-surface p-3">
+            <summary className="cursor-pointer text-sm font-bold text-console-strong">响应协议高级设置</summary>
+            <div className="mt-3 grid gap-3">
+              <Field label="消息返回结构" hint={selectedMessageReturnStructure?.description}>
+                <select
+                  value={draft.messageReturnStructure}
+                  onChange={(e) => onChangeDraft("messageReturnStructure", e.target.value as ProfileDraft["messageReturnStructure"])}
+                >
+                  {MESSAGE_RETURN_STRUCTURE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </Field>
+              {selectedMessageReturnStructure?.routeRequired && (
+                <p className="rounded-console-sm bg-console-warning-soft px-3 py-2 text-xs leading-5 text-[#734900]">
+                  非原生结构需要开启路由转换；自定义 JSON 和映射 SSE 仍以模板配置优先。
+                </p>
+              )}
+            </div>
+          </details>
         </Panel>
       )}
 
@@ -319,10 +327,18 @@ export function ProfileEditor({
             <Field label="配置 ID">
               <input value={draft.id} onChange={(e) => onChangeDraft("id", e.target.value)} />
             </Field>
-            <label className="flex items-center gap-2 text-sm font-semibold text-console-text">
-              <input type="checkbox" checked={draft.allowDangerousCli} onChange={(e) => onChangeDraft("allowDangerousCli", e.target.checked)} />
-              允许高风险 CLI 参数
-            </label>
+            <div className="grid gap-3 rounded-console-sm border border-[rgba(166,101,0,0.3)] bg-console-surface p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+              <div className="min-w-0">
+                <strong className="block text-sm text-console-strong">允许高风险 CLI 参数</strong>
+                <small className="mt-1 block text-xs leading-5 text-console-subtle">开启后才会把追加参数传给本地 AI CLI。</small>
+              </div>
+              <ToggleSwitch
+                checked={draft.allowDangerousCli}
+                tone="warning"
+                aria-label={draft.allowDangerousCli ? "关闭高风险 CLI 参数" : "允许高风险 CLI 参数"}
+                onClick={() => onChangeDraft("allowDangerousCli", !draft.allowDangerousCli)}
+              />
+            </div>
           </div>
           {draft.provider !== "custom" && (
             <Field label="AI 工具追加参数" hint="每行一个参数。该字段仅在“允许高风险 CLI 参数”开启时生效。">
@@ -447,15 +463,15 @@ export function ProfileEditor({
         )}
       </div>
 
-      <Panel className="grid gap-3 border-[rgba(184,50,50,0.28)] bg-console-danger-soft sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-        <div>
-          <strong className="text-sm text-console-strong">危险操作</strong>
-          <p className="mt-1 text-sm leading-6 text-console-subtle">删除后需要重新创建 Profile 才能恢复代理。</p>
+      <details className="rounded-console border border-console-border bg-console-muted p-3">
+        <summary className="cursor-pointer text-sm font-bold text-console-strong">更多操作</summary>
+        <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+          <p className="text-sm leading-6 text-console-subtle">删除后需要重新创建 Profile 才能恢复代理。</p>
+          <Button type="button" variant="danger" disabled={!selectedProfile} icon={<Trash2 size={16} aria-hidden="true" />} onClick={onDelete}>
+            删除配置
+          </Button>
         </div>
-        <Button type="button" variant="danger" disabled={!selectedProfile} icon={<Trash2 size={16} aria-hidden="true" />} onClick={onDelete}>
-          删除配置
-        </Button>
-      </Panel>
+      </details>
       {selectedProfile && onTestProvider && (
         <small className="text-xs text-console-subtle">测试 Provider 会发送最小 prompt，可能消耗模型额度。</small>
       )}

@@ -27,6 +27,7 @@ import { ProfileList } from "./components/ProfileList";
 import { ProfileEditor } from "./components/ProfileEditor";
 import { CreateProxyWizard } from "./components/CreateProxyWizard";
 import { RecentRequestsPanel } from "./components/RecentRequestsPanel";
+import { ProfileInspectorSidebar } from "./components/ProfileInspectorSidebar";
 import { buildDashboardStatus, buildProxyChainSteps } from "./dashboardView";
 import { buildProfileInspectorView } from "./profileWorkspaceView";
 import { Plus, RotateCw } from "lucide-react";
@@ -127,8 +128,8 @@ function OptionsApp() {
     [health, recentDiagnostics]
   );
   const profileInspectorView = useMemo(
-    () => buildProfileInspectorView(selectedProfile),
-    [selectedProfile]
+    () => buildProfileInspectorView(selectedProfile, recentDiagnostics),
+    [recentDiagnostics, selectedProfile]
   );
 
   const persistConfig = useCallback(async (nextConfig: AppConfig, sync = true) => {
@@ -336,6 +337,14 @@ function OptionsApp() {
     setPathDialogOpen(false);
   }, [pathDraft]);
 
+  const openProfileConfigDetails = useCallback(() => {
+    if (!selectedProfile) {
+      return;
+    }
+    setProfileDetailsTab("config");
+    setProfileDetailsOpen(true);
+  }, [selectedProfile]);
+
   const toggleProfileEnabled = useCallback(async (profile: ProxyProfile) => {
     if (!config) {
       return;
@@ -370,7 +379,7 @@ function OptionsApp() {
 
   return (
     <main className="min-h-screen bg-console-bg p-4 md:p-6">
-      <div className="mx-auto grid max-w-[1440px] gap-4 lg:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[236px_minmax(0,1fr)]">
+      <div className="mx-auto grid max-w-[1440px] gap-4 lg:grid-cols-[220px_minmax(0,1fr)_minmax(320px,352px)] xl:grid-cols-[236px_minmax(0,1fr)_minmax(320px,352px)]">
         {dashboardStatus && (
           <BridgeStatusBar
             status={status}
@@ -458,6 +467,19 @@ function OptionsApp() {
             onToggleEnabled={(profile) => void toggleProfileEnabled(profile).catch((error) => setStatus(error instanceof Error ? error.message : "切换失败"))}
           />
         </section>
+
+        <ProfileInspectorSidebar
+          draft={draft}
+          selectedProfile={selectedProfile ?? null}
+          className="lg:col-start-auto"
+          onCreate={() => setWizardOpen(true)}
+          onChangeDraft={updateDraft}
+          onOpenPathDialog={openPathDialog}
+          onOpenConfig={openProfileConfigDetails}
+          onSave={() => void saveProfile().catch((error) => setStatus(error instanceof Error ? error.message : "保存失败"))}
+          onTestProvider={() => void testProvider()}
+          testResult={providerTestResult}
+        />
 
       </div>
 
