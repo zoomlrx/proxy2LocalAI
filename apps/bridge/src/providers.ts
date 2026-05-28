@@ -565,6 +565,8 @@ async function* runCommandToStream(
     crlfDelay: Infinity
   });
 
+  let accumulatedText = "";
+
   try {
     for await (const line of lines) {
       emitProviderEvent(context, {
@@ -574,9 +576,20 @@ async function* runCommandToStream(
         text: line.slice(0, 1000)
       });
       const text = extractTextFromProviderLine(line, { streaming: true });
-      if (text) {
-        yield text;
+      if (!text) continue;
+
+      // 去重：跳过已累积文本的后缀（assistant 快照 / result 汇总）
+      if (accumulatedText.endsWith(text)) continue;
+      // 去重：新文本以已累积文本为前缀时，只输出增量后缀
+      if (accumulatedText && text.startsWith(accumulatedText)) {
+        const suffix = text.slice(accumulatedText.length);
+        accumulatedText = text;
+        yield suffix;
+        continue;
       }
+
+      accumulatedText += text;
+      yield text;
     }
   } finally {
     lines.close();

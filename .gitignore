@@ -15,9 +15,10 @@ Thumbs.db
 apps/extension/.crx/
 apps/bridge/data/
 .claude/
+.codex/
 doc
-docs/plans/*
-CLAUDE.md
+docs/
+
 .playwright-mcp
 
 # CodeGraph

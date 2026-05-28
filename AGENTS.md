@@ -22,6 +22,21 @@ Proxy2LocalAI 是 Chrome/Edge MV3 扩展加本地 Node Bridge 服务，将用户
 
 更完整的架构、命令和调试链路见 `docs/knowledge/project-map.md`。
 
+## 角色智能体
+
+本项目维护了 Codex 与 Claude Code 两套角色入口，职责语义保持一致：
+
+- Codex 入口：`.codex/agents/*.toml`
+- Claude Code 入口：`.claude/agents/*.md`
+- 角色索引和调用示例：`docs/agents/project-agents.md`
+- 共享角色记忆：`docs/agents/memory/`
+
+常用角色：总设计 `chief_designer` / `chief-designer`、评审者团队 `review_board` / `review-board`、需求者 `requirements_owner` / `requirements-owner`、UI/UX 设计者 `ui_ux_designer` / `ui-ux-designer`、修复者 `bug_fixer` / `bug-fixer`、开源者 `open_source_steward` / `open-source-steward`。
+
+修改任一角色时，应同步更新 Codex 文件、Claude Code 文件和角色索引文档。
+
+角色启动时应读取 `docs/agents/memory/shared.md` 和自己的记忆文件；产生长期可复用结论时写回对应记忆文件。敏感数据、本地 token、真实请求、私有路径和临时日志不得写入共享记忆；如确需临时记录，放入被忽略的 `docs/agents/memory/local/`。
+
 ## 修改纪律
 
 - 修改前先阅读真实源码和现有模式，优先延续本仓库风格。
