@@ -19,3 +19,9 @@ doc
 docs/plans/*
 CLAUDE.md
 .playwright-mcp
+
+# CodeGraph
+.codegraph/
+
+# Graphify
+graphify-out/
