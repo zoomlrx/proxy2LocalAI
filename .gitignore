@@ -14,10 +14,7 @@ release-notes.txt
 Thumbs.db
 apps/extension/.crx/
 apps/bridge/data/
-.claude/
-.codex/
 doc
-docs/
 
 .playwright-mcp
 
