@@ -93,10 +93,13 @@
 
 ### UI / 交互
 
+- 是否符合 `docs/design/ui-ux-guidelines.md` 的深色控制台 token、三栏信息架构、响应式和可访问性要求。
 - 用户是否能完成“粘贴 cURL -> 选择本地 AI -> 测试 -> 保存”的主要路径。
 - 高风险专家字段是否被分层展示，并有明确确认或恢复默认方式。
 - 错误是否包含失败阶段、原因和下一步建议。
 - 长 URL、长 JSON、长错误和日志是否不会撑破布局。
+- Options、Popup、抽屉、弹窗是否都能在窄屏使用，表格是否以横向滚动承载长字段。
+- 诊断和日志是否默认脱敏，raw/data/tool input/tool output 是否需要显式高风险开关。
 
 最低验证：相关 UI 单测或渲染测试、关键路径手动检查、长文本样本。
 
@@ -107,4 +110,3 @@
 - 设计规划和阶段拆分：需要沉淀时写入 `docs/plans/`。
 - 反复出现的问题：写入 `docs/knowledge/anti-patterns.md`。
 - 可复用做法：写入 `docs/knowledge/engineering-lessons.md`。
-

@@ -8,10 +8,10 @@ export function cx(...classes: Array<string | false | null | undefined>): string
 }
 
 const buttonVariants = {
-  primary: "border-console-primary bg-console-primary text-white hover:border-console-primary-hover hover:bg-console-primary-hover",
-  secondary: "border-console-border-strong bg-console-surface text-console-text hover:bg-console-raised",
+  primary: "border-transparent bg-console-primary text-[#06151c] shadow-[0_0_18px_oklch(81.1%_0.146_217.7_/_0.26)] hover:bg-console-primary-hover",
+  secondary: "border-console-border bg-console-surface text-console-text hover:border-console-primary hover:bg-console-raised",
   ghost: "border-transparent bg-transparent text-console-text hover:border-console-border hover:bg-console-raised",
-  danger: "border-console-danger bg-console-danger text-white hover:border-[#9f2929] hover:bg-[#9f2929]"
+  danger: "border-console-danger bg-console-danger text-white hover:border-console-danger hover:bg-console-danger"
 };
 
 const buttonSizes = {
@@ -64,7 +64,7 @@ export function Panel({ as = "section", padded = true, className, children, ...p
     <Component
       {...props}
       className={cx(
-        "min-w-0 rounded-console border border-console-border bg-console-surface",
+        "min-w-0 rounded-console border border-console-border bg-console-surface shadow-[inset_0_1px_0_oklch(100%_0_0_/_0.035)]",
         padded && "p-4",
         className
       )}
@@ -76,10 +76,10 @@ export function Panel({ as = "section", padded = true, className, children, ...p
 
 const pillStyles: Record<Tone, string> = {
   default: "border-console-border bg-console-surface text-console-subtle",
-  success: "border-[rgba(22,130,85,0.28)] bg-console-success-soft text-[#0b6740]",
-  warning: "border-[rgba(166,101,0,0.28)] bg-console-warning-soft text-[#734900]",
-  danger: "border-[rgba(184,50,50,0.28)] bg-console-danger-soft text-[#8f2222]",
-  info: "border-[rgba(35,105,168,0.28)] bg-console-info-soft text-[#164f81]"
+  success: "border-console-success bg-console-success-soft text-console-success",
+  warning: "border-console-warning bg-console-warning-soft text-console-warning",
+  danger: "border-console-danger bg-console-danger-soft text-console-danger",
+  info: "border-console-primary bg-console-info-soft text-console-primary"
 };
 
 interface PillProps extends React.HTMLAttributes<HTMLSpanElement> {
@@ -103,10 +103,10 @@ export function Pill({ tone = "default", className, children, ...props }: PillPr
 
 const dotStyles: Record<Tone, string> = {
   default: "bg-console-subtle",
-  success: "bg-console-success shadow-[0_0_0_4px_rgba(22,130,85,0.12)]",
-  warning: "bg-console-warning shadow-[0_0_0_4px_rgba(166,101,0,0.12)]",
-  danger: "bg-console-danger shadow-[0_0_0_4px_rgba(184,50,50,0.12)]",
-  info: "bg-console-info shadow-[0_0_0_4px_rgba(35,105,168,0.12)]"
+  success: "bg-console-success shadow-[0_0_10px_currentColor]",
+  warning: "bg-console-warning shadow-[0_0_10px_currentColor]",
+  danger: "bg-console-danger shadow-[0_0_10px_currentColor]",
+  info: "bg-console-info shadow-[0_0_10px_currentColor]"
 };
 
 export function StatusDot({ tone = "default", className }: { tone?: Tone; className?: string }) {
@@ -132,7 +132,7 @@ export function ToggleSwitch({ checked, tone = "primary", className, children, .
       role="switch"
       aria-checked={checked}
       className={cx(
-        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-transparent transition-colors duration-150 focus-visible:shadow-[0_0_0_2px_rgba(15,107,95,0.28)]",
+        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-transparent transition-colors duration-150 focus-visible:shadow-[0_0_0_2px_var(--color-console-primary)]",
         checked ? switchCheckedStyles[tone] : "bg-console-border-strong",
         className
       )}
@@ -177,7 +177,7 @@ interface ModalShellProps {
 export function ModalShell({ title, label, className, children, onClose, closeLabel = "关闭" }: ModalShellProps) {
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-[rgba(12,20,25,0.34)] p-4"
+      className="fixed inset-0 z-50 grid place-items-center bg-[oklch(7%_0.02_265_/_0.66)] p-4"
       role="presentation"
       onClick={onClose}
     >
@@ -217,7 +217,7 @@ interface DrawerShellProps {
 export function DrawerShell({ title, label, className, children, onClose, closeLabel = "关闭详情" }: DrawerShellProps) {
   return (
     <div
-      className="fixed inset-0 z-50 grid h-[100dvh] max-h-[100dvh] overflow-hidden bg-[rgba(12,20,25,0.34)] p-0 sm:justify-items-end"
+      className="fixed inset-0 z-50 grid h-[100dvh] max-h-[100dvh] overflow-hidden bg-[oklch(7%_0.02_265_/_0.66)] p-0 sm:justify-items-end"
       role="presentation"
       onClick={onClose}
     >

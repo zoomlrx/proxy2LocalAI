@@ -28,7 +28,7 @@ import { ProfileEditor } from "./components/ProfileEditor";
 import { CreateProxyWizard } from "./components/CreateProxyWizard";
 import { RecentRequestsPanel } from "./components/RecentRequestsPanel";
 import { ProfileInspectorSidebar } from "./components/ProfileInspectorSidebar";
-import { buildDashboardStatus, buildProxyChainSteps } from "./dashboardView";
+import { buildDashboardStatus, buildProxyChainSteps, type DashboardStatus } from "./dashboardView";
 import { buildProfileInspectorView } from "./profileWorkspaceView";
 import { Plus, RotateCw } from "lucide-react";
 import "../ui.css";
@@ -345,6 +345,23 @@ function OptionsApp() {
     setProfileDetailsOpen(true);
   }, [selectedProfile]);
 
+  const openProfileRequestDetails = useCallback(() => {
+    if (!selectedProfile) {
+      setStatus("请先选择一个 Profile，再查看最近诊断");
+      return;
+    }
+    setProfileDetailsTab("requests");
+    setProfileDetailsOpen(true);
+  }, [selectedProfile]);
+
+  const openPopupPreview = useCallback(() => {
+    try {
+      window.open(chrome.runtime.getURL("popup.html"), "_blank", "noopener,noreferrer");
+    } catch {
+      setStatus("请从浏览器工具栏打开 Popup");
+    }
+  }, []);
+
   const toggleProfileEnabled = useCallback(async (profile: ProxyProfile) => {
     if (!config) {
       return;
@@ -378,8 +395,19 @@ function OptionsApp() {
   }
 
   return (
-    <main className="min-h-screen bg-console-bg p-4 md:p-6">
-      <div className="mx-auto grid max-w-[1440px] gap-4 lg:grid-cols-[220px_minmax(0,1fr)_minmax(320px,352px)] xl:grid-cols-[236px_minmax(0,1fr)_minmax(320px,352px)]">
+    <main className="min-h-screen bg-console-bg text-console-text">
+      {dashboardStatus && (
+        <SynthHeader
+          dashboard={dashboardStatus}
+          status={status}
+          onCreate={() => setWizardOpen(true)}
+          onSync={() => void syncNow()}
+          onOpenDiagnostics={openProfileRequestDetails}
+          onOpenPopup={openPopupPreview}
+        />
+      )}
+
+      <div className="mx-auto grid max-w-[1440px] gap-4 p-3 md:p-4 lg:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[236px_minmax(0,1fr)_minmax(320px,352px)]">
         {dashboardStatus && (
           <BridgeStatusBar
             status={status}
@@ -394,13 +422,15 @@ function OptionsApp() {
         )}
 
         <section className="grid min-w-0 content-start gap-4">
-          <Panel className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+          <Panel className="grid gap-4 border-console-purple sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
             <div className="min-w-0">
-              <h1 className="text-[22px] font-bold leading-tight text-console-strong">本地 AI 代理控制台</h1>
-              <p className="mt-1 max-w-3xl text-sm leading-6 text-console-subtle" aria-live="polite">{status}</p>
+              <h1 className="font-console-display text-[26px] font-bold leading-tight text-console-strong">路由管理</h1>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-console-subtle" aria-live="polite">
+                管理本地 AI 代理路由、上游转发、响应映射和请求诊断。
+              </p>
             </div>
             <div className="flex flex-wrap justify-start gap-2 sm:justify-end">
-              <Button type="button" icon={<Plus size={16} aria-hidden="true" />} onClick={() => setWizardOpen(true)}>创建代理</Button>
+              {dashboardStatus && dashboardStatus.failedRequestCount > 0 && <Pill tone="warning">{dashboardStatus.failedRequestCount} 个路由需关注</Pill>}
               <Button type="button" variant="secondary" icon={<RotateCw size={16} aria-hidden="true" />} onClick={() => void syncNow()}>
                 同步
               </Button>
@@ -471,7 +501,7 @@ function OptionsApp() {
         <ProfileInspectorSidebar
           draft={draft}
           selectedProfile={selectedProfile ?? null}
-          className="lg:col-start-auto"
+          className="lg:col-start-2 xl:col-start-auto"
           onCreate={() => setWizardOpen(true)}
           onChangeDraft={updateDraft}
           onOpenPathDialog={openPathDialog}
@@ -634,6 +664,71 @@ function OptionsApp() {
         />
       )}
     </main>
+  );
+}
+
+function SynthHeader({
+  dashboard,
+  status,
+  onCreate,
+  onSync,
+  onOpenDiagnostics,
+  onOpenPopup
+}: {
+  dashboard: DashboardStatus;
+  status: string;
+  onCreate: () => void;
+  onSync: () => void;
+  onOpenDiagnostics: () => void;
+  onOpenPopup: () => void;
+}) {
+  return (
+    <header className="synth-header" aria-label="Proxy2LocalAI 顶部状态栏">
+      <div className="synth-grid" aria-hidden="true" />
+      <div className="synth-sun" aria-hidden="true" />
+      <svg className="palm-line" viewBox="0 0 220 76" aria-hidden="true">
+        <path d="M74 76 C78 47 77 28 60 9 M76 33 C56 26 42 21 23 22 M77 31 C92 19 107 12 130 15 M70 39 C58 41 45 50 34 63 M82 39 C104 41 120 49 141 66" stroke="currentColor" strokeWidth="6" fill="none" strokeLinecap="round" />
+        <path d="M148 76 C152 51 151 35 138 19 M150 44 C136 40 126 36 111 38 M151 43 C166 34 180 30 198 34" stroke="currentColor" strokeWidth="5" fill="none" strokeLinecap="round" />
+      </svg>
+      <div className="scanline" aria-hidden="true" />
+
+      <div className="relative z-10 mx-auto flex min-h-[86px] max-w-[1440px] flex-wrap items-center gap-3 px-4 py-3 md:flex-nowrap md:px-5">
+        <div className="flex min-w-[250px] items-center gap-3">
+          <div className="grid h-11 w-11 place-items-center rounded-[12px] border border-console-primary bg-console-surface shadow-[0_0_18px_oklch(81.1%_0.146_217.7_/_0.26)]">
+            <span className="font-console-display text-sm font-bold text-console-primary">P2</span>
+          </div>
+          <div className="grid gap-0.5">
+            <strong className="font-console-display text-lg font-bold tracking-[0.01em] text-console-strong">proxy2LocalAI Options</strong>
+            <span className="text-xs text-console-subtle">开发者 UI 代码代理控制台</span>
+          </div>
+        </div>
+
+        <div className="ml-0 flex min-w-0 flex-1 flex-wrap items-center justify-start gap-2 md:ml-auto md:justify-end">
+          <Pill tone={dashboard.bridgeState === "online" ? "success" : "danger"}>
+            {dashboard.bridgeLabel}
+          </Pill>
+          <Pill tone="info">{dashboard.bridgeVersionLabel || "Bridge 版本未知"}</Pill>
+          <Pill tone={dashboard.failedRequestCount > 0 ? "warning" : "default"}>
+            最近失败 {dashboard.failedRequestCount}
+          </Pill>
+          <span className="max-w-[220px] truncate rounded-full border border-console-border bg-console-surface px-3 py-1 text-xs text-console-subtle" title={status}>
+            {status}
+          </span>
+          <Button type="button" variant="secondary" size="sm" onClick={onOpenDiagnostics}>
+            最近诊断
+          </Button>
+          <Button type="button" variant="secondary" size="sm" onClick={onOpenPopup}>
+            Popup 状态
+          </Button>
+          <Button type="button" variant="secondary" size="sm" icon={<RotateCw size={14} aria-hidden="true" />} onClick={onSync}>
+            同步
+          </Button>
+          <Button type="button" size="sm" icon={<Plus size={14} aria-hidden="true" />} onClick={onCreate}>
+            创建代理
+          </Button>
+        </div>
+      </div>
+    </header>
   );
 }
 

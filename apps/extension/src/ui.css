@@ -1,31 +1,36 @@
 @import "tailwindcss";
 
 @theme {
-  --color-console-bg: #f4f6f8;
-  --color-console-surface: #ffffff;
-  --color-console-muted: #f8fafb;
-  --color-console-raised: #eef3f5;
-  --color-console-text: #172026;
-  --color-console-strong: #0c1419;
-  --color-console-subtle: #63717a;
-  --color-console-border: #d8e0e5;
-  --color-console-border-strong: #bcc9d1;
-  --color-console-primary: #0f6b5f;
-  --color-console-primary-hover: #0a574d;
-  --color-console-primary-soft: #e2f2ef;
-  --color-console-success: #168255;
-  --color-console-success-soft: #e3f7eb;
-  --color-console-warning: #a66500;
-  --color-console-warning-soft: #fff5dc;
-  --color-console-danger: #b83232;
-  --color-console-danger-soft: #fde8e8;
-  --color-console-info: #2369a8;
-  --color-console-info-soft: #e7f1fb;
+  --color-console-bg: oklch(16.2% 0.022 257.9);
+  --color-console-surface: oklch(21.2% 0.033 267.8);
+  --color-console-muted: oklch(18.6% 0.032 264);
+  --color-console-raised: oklch(23.2% 0.029 266.3);
+  --color-console-text: oklch(95.4% 0.022 254.4);
+  --color-console-strong: oklch(98% 0.01 254.4);
+  --color-console-subtle: oklch(75.8% 0.037 269.8);
+  --color-console-border: oklch(28.8% 0.038 269.1);
+  --color-console-border-strong: oklch(36% 0.052 269.1);
+  --color-console-primary: oklch(81.1% 0.146 217.7);
+  --color-console-primary-hover: oklch(86% 0.13 217.7);
+  --color-console-primary-soft: oklch(30% 0.082 217.7 / 0.46);
+  --color-console-accent: oklch(71% 0.247 341);
+  --color-console-accent-soft: oklch(30% 0.12 341 / 0.42);
+  --color-console-purple: oklch(60.5% 0.219 292.4);
+  --color-console-purple-soft: oklch(28% 0.12 292.4 / 0.42);
+  --color-console-success: oklch(72.3% 0.192 149.6);
+  --color-console-success-soft: oklch(28% 0.09 149.6 / 0.48);
+  --color-console-warning: oklch(76.9% 0.165 70.1);
+  --color-console-warning-soft: oklch(31% 0.095 70.1 / 0.52);
+  --color-console-danger: oklch(67.2% 0.216 22.3);
+  --color-console-danger-soft: oklch(30% 0.11 22.3 / 0.52);
+  --color-console-info: oklch(81.1% 0.146 217.7);
+  --color-console-info-soft: oklch(30% 0.082 217.7 / 0.46);
+  --font-display: Orbitron, Rajdhani, Eurostile, "Segoe UI", system-ui, sans-serif;
   --font-sans: Inter, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  --radius-console: 8px;
-  --radius-console-sm: 6px;
-  --shadow-console: 0 18px 48px rgba(14, 25, 32, 0.12);
+  --font-mono: "JetBrains Mono", "IBM Plex Mono", "Cascadia Mono", ui-monospace, monospace;
+  --radius-console: 10px;
+  --radius-console-sm: 8px;
+  --shadow-console: 0 24px 80px oklch(0% 0 0 / 0.35);
 }
 
 @layer base {
@@ -34,6 +39,7 @@
   }
 
   html {
+    color-scheme: dark;
     background: var(--color-console-bg);
     color: var(--color-console-text);
     font-family: var(--font-sans);
@@ -44,7 +50,10 @@
   body {
     margin: 0;
     min-width: 320px;
-    background: var(--color-console-bg);
+    background:
+      radial-gradient(circle at 84% 12%, oklch(60.5% 0.219 292.4 / 0.2), transparent 32rem),
+      radial-gradient(circle at 18% 0%, oklch(81.1% 0.146 217.7 / 0.12), transparent 28rem),
+      var(--color-console-bg);
   }
 
   button,
@@ -73,7 +82,9 @@
   select:focus-visible,
   summary:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(15, 107, 95, 0.2);
+    box-shadow:
+      0 0 0 2px var(--color-console-primary),
+      0 0 0 5px oklch(81.1% 0.146 217.7 / 0.22);
   }
 
   h1,
@@ -93,9 +104,14 @@
     width: 100%;
     border: 1px solid var(--color-console-border-strong);
     border-radius: var(--radius-console-sm);
-    background: var(--color-console-surface);
+    background: var(--color-console-muted);
     color: var(--color-console-text);
     padding: 8px 10px;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: oklch(75.8% 0.037 269.8 / 0.72);
   }
 
   textarea {
@@ -112,5 +128,91 @@
 @layer utilities {
   .break-anywhere {
     overflow-wrap: anywhere;
+  }
+
+  .font-console-display {
+    font-family: var(--font-display);
+  }
+}
+
+@layer components {
+  .synth-header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    overflow: hidden;
+    border-bottom: 1px solid color-mix(in oklch, var(--color-console-border), var(--color-console-purple) 34%);
+    background:
+      linear-gradient(180deg, oklch(11% 0.03 268 / 0.96), oklch(15% 0.035 266 / 0.94));
+    box-shadow: 0 12px 36px oklch(0% 0 0 / 0.28);
+  }
+
+  .synth-grid {
+    position: absolute;
+    inset: 0;
+    opacity: 0.82;
+    background:
+      linear-gradient(transparent 62%, oklch(60.5% 0.219 292.4 / 0.24) 63%, transparent 66%),
+      linear-gradient(90deg, transparent 62%, oklch(81.1% 0.146 217.7 / 0.2) 63%, transparent 66%);
+    background-size: 100% 16px, 38px 100%;
+    transform: perspective(420px) rotateX(63deg) translateY(15px) scale(1.2);
+    transform-origin: bottom;
+    animation: grid-drift 9s linear infinite;
+  }
+
+  .synth-sun {
+    position: absolute;
+    left: clamp(150px, 22vw, 430px);
+    bottom: 15px;
+    width: 96px;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background:
+      repeating-linear-gradient(180deg, transparent 0 8px, oklch(16% 0.05 266 / 0.8) 9px 13px),
+      linear-gradient(180deg, var(--color-console-warning), var(--color-console-accent) 48%, var(--color-console-purple));
+    filter: drop-shadow(0 0 14px oklch(71% 0.247 341 / 0.48));
+    animation: sun-pulse 5.6s ease-in-out infinite;
+  }
+
+  .palm-line {
+    position: absolute;
+    left: clamp(300px, 32vw, 570px);
+    bottom: 0;
+    width: 220px;
+    height: 76px;
+    color: oklch(7% 0.02 265 / 0.96);
+    opacity: 0.88;
+  }
+
+  .scanline {
+    position: absolute;
+    inset: 0;
+    height: 2px;
+    background: linear-gradient(180deg, transparent, oklch(81.1% 0.146 217.7 / 0.18), transparent);
+    opacity: 0.78;
+    animation: scan 4.8s linear infinite;
+  }
+}
+
+@keyframes grid-drift {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: 0 16px, 38px 0; }
+}
+
+@keyframes sun-pulse {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(2px) scale(1.03); }
+}
+
+@keyframes scan {
+  0% { transform: translateY(-10px); }
+  100% { transform: translateY(96px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .synth-grid,
+  .synth-sun,
+  .scanline {
+    animation: none;
   }
 }

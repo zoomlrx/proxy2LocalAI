@@ -68,7 +68,7 @@ function PopupApp() {
   const view = useMemo(() => buildPopupViewModel(config, health, diagnostics), [config, diagnostics, health]);
 
   return (
-    <main className="w-[320px] bg-console-bg p-3">
+    <main className="w-[390px] max-w-[calc(100vw-36px)] bg-console-bg p-3 text-console-text">
       <section className="grid gap-3">
         <Panel className="grid gap-3 shadow-console">
           <header className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">

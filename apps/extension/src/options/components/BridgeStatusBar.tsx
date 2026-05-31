@@ -31,7 +31,7 @@ export function BridgeStatusBar({
     <aside className="grid content-start gap-4 lg:sticky lg:top-5">
       <Panel className="grid gap-4">
         <div className="grid grid-cols-[32px_minmax(0,1fr)] items-center gap-3">
-          <div className="grid h-8 w-8 place-items-center rounded-[7px] bg-[#102923] font-mono text-sm font-bold text-[#a9f3e1]">
+          <div className="grid h-8 w-8 place-items-center rounded-[7px] border border-console-primary bg-console-muted font-mono text-sm font-bold text-console-primary shadow-[0_0_18px_oklch(81.1%_0.146_217.7_/_0.22)]">
             P2
           </div>
           <div className="min-w-0">
@@ -40,7 +40,10 @@ export function BridgeStatusBar({
           </div>
         </div>
 
-        <div className="grid gap-2 rounded-console-sm border border-[rgba(22,130,85,0.28)] bg-console-success-soft p-3">
+        <div className={dashboard.bridgeState === "online"
+          ? "grid gap-2 rounded-console-sm border border-console-success bg-console-success-soft p-3"
+          : "grid gap-2 rounded-console-sm border border-console-danger bg-console-danger-soft p-3"}
+        >
           <div className="flex min-w-0 items-center gap-2">
             <StatusDot tone={bridgeTone} />
             <strong className="truncate text-sm text-console-strong">{dashboard.bridgeLabel}</strong>
