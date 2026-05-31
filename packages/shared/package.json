@@ -1,6 +1,6 @@
 {
   "name": "@proxy2localai/shared",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Shared configuration and response utilities for Proxy2LocalAI.",
   "license": "MIT",
   "type": "module",

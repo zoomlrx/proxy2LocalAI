@@ -1,6 +1,6 @@
 {
   "name": "@proxy2localai/bridge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local HTTP bridge for Proxy2LocalAI.",
   "license": "MIT",
   "type": "module",
@@ -13,6 +13,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@proxy2localai/shared": "0.1.0"
+    "@proxy2localai/shared": "0.2.0"
   }
 }
